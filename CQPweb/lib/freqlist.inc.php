@@ -29,26 +29,23 @@
 
 
 
-/* ------------ *
- * BEGIN SCRIPT *
- * ------------ */
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
 
-
-
-/* initialise variables from settings files  */
 require('../lib/environment.inc.php');
 
 
 /* include function library files */
-require("../lib/library.inc.php");
+require('../lib/library.inc.php');
 require('../lib/html-lib.inc.php');
-require("../lib/freqtable.inc.php");
-require("../lib/exiterror.inc.php");
-require("../lib/metadata.inc.php");
-require("../lib/subcorpus.inc.php");
-require("../lib/user-lib.inc.php");
-require("../lib/cwb.inc.php");         // needed?
-require("../lib/cqp.inc.php");
+require('../lib/freqtable.inc.php');
+require('../lib/exiterror.inc.php');
+require('../lib/metadata.inc.php');
+require('../lib/xml.inc.php');
+require('../lib/subcorpus.inc.php');
+require('../lib/user-lib.inc.php');
+require('../lib/cqp.inc.php');
 
 
 
@@ -56,10 +53,10 @@ cqpweb_startup_environment(CQPWEB_STARTUP_DONT_CONNECT_CQP);
 
 
 
-/* ------------------------------- */
-/* initialise variables from $_GET */
-/* and perform initial fiddling    */
-/* ------------------------------- */
+/* ------------------------------- *
+ * initialise variables from $_GET *
+ * and perform initial fiddling    *
+ * ------------------------------- */
 
 /* this is a bit of a cheat to get rid of empty strings && make sure isset works properly */
 foreach ($_GET as $k => $g)
@@ -270,9 +267,17 @@ $sql = "SELECT item, freq from $freqtable
 /* and run it */
 $result = do_mysql_query($sql);
 
-$n = mysql_num_rows($result);
+/* get number of tokens for AntConc-style downloads */
+if ($download_mode)
+{
+	$sum_sql = str_replace('SELECT item, freq', 'SELECT sum(freq)', $sql);
+	$sum_result = do_mysql_query($sum_sql);
+	list($sum_tokens) = mysql_fetch_row($sum_result);
+}
 
-$next_page_exists = ( $n == $per_page ? true : false );
+$n_words = mysql_num_rows($result);
+
+$next_page_exists = ( $n_words == $per_page ? true : false );
 
 $description = 
 	($download_mode 
@@ -291,7 +296,9 @@ $description =
 
 if ($download_mode)
 {
-	freqlist_write_download($att_desc[$att], $description, $result);
+	freqlist_write_download($att_desc[$att], $description, $result, $sum_tokens, $n_words);
+	/* nb. $n is only the sum of types in download mode! 
+	 * In non-download mode, it is the n of items viewed. */
 }
 else
 {
@@ -324,7 +331,7 @@ else
 	/* the value of $i is (relatively speaking) 1 less than this */
 	$begin_at = (($page_no - 1) * $per_page) + 1; 
 	
-	for ( $i = 0 ; $i < $n ; $i++ )
+	for ( $i = 0 ; $i < $n_words ; $i++ )
 	{
 		$r = mysql_fetch_object($result);
 		$line = print_freqlist_line($r, ($begin_at + $i), $att, $restrict_string);
@@ -433,7 +440,7 @@ function print_freqlist_control_row($page_no, $next_page_exists)
 }
 
 
-function freqlist_write_download($att_desc, $description, &$result)
+function freqlist_write_download($att_desc, $description, &$result, $sum_tokens, $sum_types)
 {
 	global $User;
 	$eol = get_user_linefeed($User->username);
@@ -441,14 +448,31 @@ function freqlist_write_download($att_desc, $description, &$result)
 
 	header("Content-Type: text/plain; charset=utf-8");
 	header("Content-disposition: attachment; filename=frequency_list.txt");
-	echo "$description$eol";
-	echo "__________________$eol$eol";
-	echo "Number\t$att_desc\tFrequency$eol$eol";
-
-	for ($i = 1, $total = 0; ($r = mysql_fetch_object($result)) !== false ; $i++ )
+	
+	/* test setting: false = normal style, true = AntConc style. */
+	if (!$User->freqlist_altstyle)
 	{
-		echo "$i\t{$r->item}\t{$r->freq}$eol";
-		$total += $r->freq;
+		/* classic CQPweb freqlist download. */
+		echo "$description$eol";
+		echo "__________________$eol$eol";
+		echo "Number\t$att_desc\tFrequency$eol$eol";
+	
+		for ($i = 1, $total = 0; (false !== $o = mysql_fetch_object($result)) ; $i++ )
+//		{
+			echo "$i\t{$o->item}\t{$o->freq}$eol";
+//			$total += $o->freq;
+//		}
+// now we have this info as a param from main script, we don't need the running total.
+		echo "{$eol}Total:\t\t$sum_tokens$eol";
 	}
-	echo "{$eol}Total:\t\t$total$eol";
+	else
+	{
+		/* alternative=style freqlist download (AntConc-compatible). */
+		echo "#Word Types: $sum_types$eol";
+		echo "#Word Tokens: $sum_tokens$eol";
+		echo "#Search Hits: 0$eol";
+	
+		for ($i = 1, $total = 0; (false !== $o = mysql_fetch_object($result)) ; $i++ )
+			echo "$i\t{$o->freq}\t{$o->item}\t$eol";
+	}
 }

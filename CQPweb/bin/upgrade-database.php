@@ -27,7 +27,7 @@
  * 
  * This script updates the structure of the database to match the version of the code.
  * 
- * It is theoretically always safe to run this function because, if the db structure is up to date, it won't do anything.
+ * It is theoretically always safe to run this script because, if the db structure is up to date, it won't do anything.
  * 
  * Note that, up to and including 3.0.16, it was assumed that DB changes would be done manually. 
  * 
@@ -52,7 +52,7 @@ require('../bin/cli-lib.php');
  */
 
 		/* the most recent database version: ie the last version whose release involved a DB change */
-		$last_changed_version = '3.2.10';
+		$last_changed_version = '3.2.27';
 		
 		/* 
 		 * versions where there is no change. Array of old_version => version that followed. 
@@ -75,7 +75,14 @@ require('../bin/cli-lib.php');
 			'3.2.0'  => '3.2.1',
 			'3.2.2'  => '3.2.3',
 			'3.2.8'  => '3.2.9',
-			'3.2.10' => '3.2.11',
+			'3.2.10' => '3.2.12',
+			'3.2.13' => '3.2.14',
+			'3.2.15' => '3.2.17',
+			'3.2.18' => '3.2.19',
+			'3.2.20' => '3.2.21',
+			'3.2.22' => '3.2.23',
+			'3.2.25' => '3.2.26',
+			'3.2.27' => '3.2.30',
 			);
 
 /* END COMPULSORY UPDATE VARS
@@ -118,6 +125,7 @@ while (false !== ($r = mysql_fetch_row($result)))
 	{
 		$greater_than_3_0_16 = true;
 		break;
+		/* if this table is NOT present, then we have a very old database version. */
 	}
 }
 
@@ -129,7 +137,7 @@ if (!$greater_than_3_0_16)
 
 while (0 > version_compare($version = get_db_version(), $last_changed_version))
 {
-	echo "Current DB version is $version; target version is $last_changed_version .  About to upgrade....\n";
+	echo "Current DB version is $version ; target version is $last_changed_version .  About to upgrade....\n";
 	upgrade_db_version_from($version);
 }
 
@@ -162,6 +170,7 @@ function upgrade_db_version_from($oldv)
 	}
 }
 
+
 function upgrade_db_version_note($newv)
 {
 	do_mysql_query("update system_info set value = '$newv' where setting_name = 'db_version'");
@@ -172,6 +181,187 @@ function upgrade_db_version_note($newv)
 
 /* --------------------------------------------------------------------------------------------------------- */
 
+// for the NEXT upgrade:
+			// TODO: caching in idlink etc.,,,,
+			// get list of idlink tables
+			// modifuy each one
+			
+// 			'',
+
+
+
+/* 3.2.26->3.2.27 */
+function upgrade_3_2_26()
+{
+	$sql = array(
+			'alter table saved_dbs add index (`corpus`)',
+			'alter table `user_info` add column `freqlist_altstyle` tinyint default 0 after `max_dbsize`',
+			'alter table `xml_visualisations` add column `is_template` tinyint(1) NOT NULL default 0 after `html`',
+			'rename table `clocurve_info` to `lgcurve_info`',
+			'rename table `clocurve_datapoints` to `lgcurve_datapoints`',
+			'alter table `lgcurve_datapoints` change column `clocurve_id` `lgcurve_id` int unsigned NOT NULL',
+	);
+	
+	foreach ($sql as $q)
+		do_mysql_query($q);
+
+	upgrade_db_version_note('3.2.27');
+}
+
+/* 3.2.24->3.2.25 */
+function upgrade_3_2_24()
+{
+	$sql = array(
+			'alter table `system_longvalues` modify column `value` longtext NOT NULL',
+			'CREATE TABLE `clocurve_info` (
+					`id` int unsigned NOT NULL AUTO_INCREMENT,
+					`corpus` varchar(20) NOT NULL,
+					`annotation` varchar(20) NOT NULL,
+					`interval_width` int unsigned NOT NULL,
+					`create_time` int default NULL,
+					`create_duration` int unsigned default NULL,
+					`n_datapoints` int unsigned,
+					PRIMARY KEY (`id`)
+				) ENGINE=InnoDB CHARACTER SET utf8 COLLATE utf8_bin',
+			'CREATE TABLE `clocurve_datapoints` (
+					`clocurve_id` int unsigned NOT NULL,
+					`tokens` bigint unsigned NOT NULL,
+					`types_so_far` bigint unsigned NOT NULL,
+					KEY (`clocurve_id`)
+				) ENGINE=InnoDB CHARACTER SET utf8 COLLATE utf8_bin',
+	);
+	
+	foreach ($sql as $q)
+		do_mysql_query($q);
+	
+	/* a special one: only if no CQP privilege not set up already. */
+	$sym = PRIVILEGE_TYPE_CQP_BINARY_FILE;
+	if (1 > mysql_num_rows(do_mysql_query("select * from user_privilege_info where type = $sym ")))
+		do_mysql_query("insert into `user_privilege_info` (description, type, scope) VALUES ('CQP binary file access privilege',$sym,'')");
+	
+	upgrade_db_version_note('3.2.25');
+}
+
+/* 3.2.23->3.2.24 */
+function upgrade_3_2_23()
+{
+	/* NOTE:
+	 * This is a dummy. It does nothing. The reason it is here is that it was present as a placeholder for a long while,
+	 * while I was waiting to add database changes that, in the end, I held over to 3.2.25; and users may have picked it up
+	 * from the svn repo in that period. I am therefore not jumping a version here because of the faint possiblity I might
+	 * break the upgrade path for some users. 
+	 */
+	upgrade_db_version_note('3.2.24');
+}
+
+
+
+
+/* 3.2.21->3.2.22 */
+function upgrade_3_2_21()
+{
+	$sql = array(
+			'CREATE TABLE `corpus_alignments` 
+				(`corpus` varchar(20) NOT NULL,`target` varchar(20) NOT NULL) ENGINE=InnoDB CHARACTER SET utf8 COLLATE utf8_bin',
+	);
+	foreach ($sql as $q)
+		do_mysql_query($q);
+	
+	/* EXTRA ACTION: populate the database table thus created. 
+	$result = do_mysql_query("select corpus from corpus_info");
+	while (false !== ($o = mysql_fetch_object($result)))
+		system("php execute-cli.php scan_for_corpus_alignments {$o->corpus}");
+	 */
+	/* commented out because not all system admins will want to do the above; manual explains how to do, er, manually. */
+	
+	upgrade_db_version_note('3.2.22');
+}
+
+
+/* 3.2.19->3.2.20 */
+function upgrade_3_2_19()
+{
+	$sql = array(
+			'alter table `xml_visualisations` add column `in_download` tinyint(1) NOT NULL default 0 after `in_context`',
+	);
+	foreach ($sql as $q)
+		do_mysql_query($q);
+	upgrade_db_version_note('3.2.20');
+}
+
+
+/* 3.2.17->3.2.18 */
+function upgrade_3_2_17()
+{
+	$sql = array(	
+			'alter table corpus_info add column `visualise_context_extra_css` varchar(255) default "" after `visualise_position_label_attribute`',
+			'alter table corpus_info add column `visualise_conc_extra_css`    varchar(255) default "" after `visualise_position_label_attribute`',
+			'alter table corpus_info add column `visualise_context_extra_js`  varchar(255) default "" after `visualise_position_label_attribute`',
+			'alter table corpus_info add column `visualise_conc_extra_js`     varchar(255) default "" after `visualise_position_label_attribute`',
+			'alter table corpus_info add column `visualise_break_context_on_punc` tinyint(1) NOT NULL default 1 after `visualise_context_extra_css`',
+			'drop table if exists `xml_visualisations`', 
+			'CREATE TABLE `xml_visualisations` (
+                         `id` int NOT NULL AUTO_INCREMENT,
+                         `corpus` varchar(20) NOT NULL default "",
+                         `element` varchar(70) NOT NULL default "", 
+                         `conditional_on` varchar(1024) NOT NULL default "",
+                         `in_concordance` tinyint(1) NOT NULL default 1,
+                         `in_context` tinyint(1) NOT NULL default 1,
+                         `html` varchar(1024) NOT NULL default "",
+                         primary key (`id`),
+                         key(`corpus`)
+                    ) ENGINE=InnoDB CHARACTER SET utf8 COLLATE utf8_bin',
+	);
+	foreach ($sql as $q)
+		do_mysql_query($q);
+	upgrade_db_version_note('3.2.18');
+}
+
+
+/* 3.2.14->3.2.15 */
+function upgrade_3_2_14()
+{
+	$sql = array(
+			/* first, force log-out everyone. Then drop key. then redefine column. Then re-add key. */
+			'delete from user_cookie_tokens',
+			'alter table user_cookie_tokens drop key `token`',
+			'alter table user_cookie_tokens modify column `token` char(64) NOT NULL DEFAULT ""',
+			'alter table user_cookie_tokens add key(`token`, `user_id`)'
+	);
+	foreach ($sql as $q)	
+		do_mysql_query($q);
+	
+	upgrade_db_version_note('3.2.15');
+	
+	echo "\n!!!!!!!!!!!!!!!!!!!!!!!!Important Note: this upgrade forces all users to re-log-in. \n\n";
+}
+
+
+/* 3.2.12->3.2.13 */
+function upgrade_3_2_12()
+{
+	$sql = array(
+		'alter table corpus_info add column `size_bytes_index` bigint unsigned NOT NULL DEFAULT 0 after `size_texts`',
+		'alter table corpus_info add column `size_bytes_freq`  bigint unsigned NOT NULL DEFAULT 0 after `size_bytes_index`',
+	);
+	foreach ($sql as $q)
+		do_mysql_query($q);
+	
+	/* we need to run the update-function for these two columns for each existing corpus.
+	 * However, we don't have the necessary library functions here, or a full environment.
+	 * So DELEGATE to execute-cli.php.
+	 */
+	$result = do_mysql_query("select corpus from corpus_info");
+	while (false !== ($o = mysql_fetch_object($result)))
+	{
+		echo "Updating index size record for corpus {$o->corpus}\n\t";
+		system("php execute-cli.php update_corpus_index_size {$o->corpus}");
+		echo "Updating freq table size record for corpus {$o->corpus}\n\t";
+		system("php execute-cli.php update_corpus_freqtable_size {$o->corpus}");
+	}
+	
+	upgrade_db_version_note('3.2.13');
+}
 
 
 /* 3.2.9->3.2.10 */
@@ -233,7 +423,7 @@ function upgrade_3_2_6()
 	echo "Warning: this upgrade action can take a long time.\nDO NOT interrupt the script; let it run to completion.\n";
 	
 	/* we have some extra functions for this one */
-	require('../bin/upgrade326utils.inc.php');
+	require('../bin/v3-2-6-upgrade-utils.inc.php');
 	/* replace with the actual funcs if they turn out to be shortish. */
 	
 	$sql = array(
@@ -912,7 +1102,9 @@ function upgrade_3_0_16()
 		   `autojoin_regex` text,
 		   primary key (`id`)
 		 ) CHARACTER SET utf8 COLLATE utf8_general_ci',
-		 'CREATE TABLE `user_memberships` (`user_id` int NOT NULL,`group_id` int NOT NULL,`expiry_time` int UNSIGNED NOT NULL default 0) CHARACTER SET utf8 COLLATE utf8_general_ci',
+		 'CREATE TABLE `user_memberships` 
+			(`user_id` int NOT NULL,`group_id` int NOT NULL,`expiry_time` int UNSIGNED NOT NULL default 0)
+			CHARACTER SET utf8 COLLATE utf8_general_ci',
 		'insert into user_groups (group_name,description)values("superusers","Users with admin power")',
 		'insert into user_groups (group_name,description)values("everybody","Group to which all users automatically belong")'
 	);

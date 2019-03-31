@@ -82,6 +82,19 @@
  */
 
 
+/**
+ * Queries whether a given corpus name exists on the system.
+ * 
+ * @param unknown $corpus
+ */
+function corpus_exists($corpus)
+{
+	static $existing = NULL;
+	if (is_null($existing))
+		$existing = list_corpora();
+	return in_array($corpus, $existing);
+}
+
 
 /** 
  * Returns a list of currently-defined corpus categories, as an array (integer keys = id numbers).
@@ -128,7 +141,9 @@ function add_corpus_category($label, $initial_sort_n = 0)
 }
 
 
-/** returns a list of all the corpora (referred to by mysql ID codes) currently in the system, as an array */
+/** 
+ * Returns a list of all the corpora (referred to by the corpus name strings) currently in the system, as a flat array.
+ */
 function list_corpora()
 {
 	$list_of_corpora = array();
@@ -156,7 +171,7 @@ function get_corpus_info_sql_fields()
 
 /**
  * Gets a database info object for the specified corpus.
- * Returns false if the string argument is not an existing corpus.
+ * Returns false if the string argument is not a handle for an existing corpus.
  */
 function get_corpus_info($corpus)
 {
@@ -174,6 +189,7 @@ function get_corpus_info($corpus)
  * 
  * If a regex argument is supplied, then only corpora whose "name" 
  * (the MySQL 'corpus' field) matches the regex will be included in the returned array.
+ * Regex syntax is PCRE, not MySQL-REGEXP!
  */
 function get_all_corpora_info($regex = false)
 {
@@ -198,7 +214,7 @@ function corpus_list_texts($corpus = NULL)
 	
 	$list_of_texts = array();
 	$result = do_mysql_query("select text_id from text_metadata_for_" . mysql_real_escape_string($corpus));
-	while ( ($r=mysql_fetch_row($result)) !== false )
+	while ( false !== ($r=mysql_fetch_row($result)))
 		$list_of_texts[] = $r[0];
 	return $list_of_texts;
 }
@@ -216,7 +232,7 @@ function text_metadata_table_exists($corpus = NULL)
 
 
 /**
- * Gets an item of corpus metadata, either from the corpus_info tavble, or the corpus_metadata_variable table.
+ * Gets an item of corpus metadata, either from the corpus_info table, or the corpus_metadata_variable table.
  */
 function get_corpus_metadata($field, $corpus = NULL)
 {
@@ -398,8 +414,18 @@ function update_corpus_visualisation_translate($in_concordance, $in_context, $s_
 function update_corpus_size($corpus = NULL)
 {
 	$corpus = safe_specified_or_global_corpus($corpus);
-	$result = do_mysql_query("select sum(words), count(*) from text_metadata_for_$corpus");
-	list($ntok, $ntext) = mysql_fetch_row($result);
+// 	$result = do_mysql_query("select sum(words), count(*) from text_metadata_for_$corpus");
+// 	list($ntok, $ntext) = mysql_fetch_row($result);
+//	new method used instead because the above gives bad results if there are tokens-outside-texts errors.
+	$result = do_mysql_query("select count(*) from text_metadata_for_$corpus");
+	list($ntext) = mysql_fetch_row($result);
+
+	$info = get_corpus_info($corpus);
+	global $cqp;
+	if (empty($cqp))
+		connect_global_cqp();
+	$cqp->set_corpus($info->cqp_name);
+	$ntok = $cqp->get_corpus_tokens();
 	do_mysql_query("update corpus_info set size_tokens = $ntok, size_texts = $ntext where corpus = '$corpus'");
 }
 
@@ -413,6 +439,7 @@ function update_corpus_n_types($corpus = NULL)
 	if (0 < mysql_num_rows(do_mysql_query("show tables like 'freq_corpus_{$corpus}_word'")))
 	{
 		list($types) = mysql_fetch_row(do_mysql_query("select count(distinct(item)) from freq_corpus_{$corpus}_word"));
+		// TODO. why not just count(*) ???  in this table all items are always distinct. 
 		do_mysql_query("update corpus_info set size_types = $types where corpus = '$corpus'");
 		return true;
 	}
@@ -424,7 +451,7 @@ function update_corpus_n_types($corpus = NULL)
 
 
 /**
- * Returns as integer the number of words in this corpus.
+ * Returns as integer the number of tokens in this corpus.
  */
 function get_corpus_wordcount($corpus = NULL)
 {
@@ -470,6 +497,59 @@ function get_corpus_n_types($corpus = NULL)
 }
 
 
+/**
+ * Updates the cached record of the on-disk size of the CWB indexes of a corpus, #
+ * including the "__freq" corpus if it exists.
+ * 
+ * Note that if the corpus is cwb-external (reliant on indexes outside CWB's own folders),
+ * those indexes aren't included. 
+ * 
+ * @param  string $corpus  Corpus to measure.
+ */
+function update_corpus_index_size($corpus)
+{
+	global $Config;
+	
+	$c = get_corpus_info($corpus);
+	
+	if (false === $c)
+		return;
+	
+	$size = ($c->cwb_external ? 0 : recursive_sizeof_directory("{$Config->dir->index}/{$c->corpus}")); 
+	
+	$fdir = "{$Config->dir->index}/{$c->corpus}__freq";
+	if (is_dir($fdir))
+		$size += recursive_sizeof_directory($fdir);
+	
+	do_mysql_query("update corpus_info set size_bytes_index = $size where id = {$c->id}");
+}
+
+/**
+ * @see update_corpus_index_size - this is the same, except for corpus frequency tables.
+ */
+function update_corpus_freqtable_size($corpus)
+{
+	global $Config;
+	
+	$c = get_corpus_info($corpus);
+	
+	if (false === $c)
+		return;
+	
+	$size = get_mysql_table_size("freq_corpus_$corpus%") + get_mysql_table_size("freq_text_index_$corpus");
+	
+	do_mysql_query("update corpus_info set size_bytes_freq = $size where id = {$c->id}");
+}
+
+
+
+
+
+
+
+
+
+
 /*
  * ==================================
  * FUNCTIONS DEALING WITH ANNOTATIONS
@@ -504,6 +584,7 @@ function get_corpus_annotations($corpus = NULL)
 
 	return $compiled;
 }
+// tODO should the above perhaps be "lsit" for consistency with other types of data?
 
 /**
  * Returns an associative array: the keys are annotation handles,
@@ -587,10 +668,9 @@ function corpus_annotation_taglist($field, $corpus = NULL)
 	if ($field == 'word')
 		return array();
 	
-	$sql_query = "select distinct(item) from freq_corpus_{$corpus}_{$field} limit 1000";
-	$result = do_mysql_query($sql_query);
+	$result = do_mysql_query("select distinct(item) from freq_corpus_{$corpus}_{$field} limit 1000");
 			
-	while ( ($r = mysql_fetch_row($result)) !== false )
+	while ( false !== ($r = mysql_fetch_row($result)))
 		$tags[] = $r[0];
 	
 	/* better would be: sort($tags, SORT_NATURAL | SORT_FLAG_CASE); but that requires PHP >= 5.4)  */
@@ -601,10 +681,81 @@ function corpus_annotation_taglist($field, $corpus = NULL)
 
 
 
+/**
+ * Gets an associative array (corpus/att handle --> description) of a-attributes
+ * belonging to the specified corpus.
+ * 
+ * An a-attribute always has the same handle as the target corpus that it points to.
+ * 
+ * So there is no separate "descrition" field: it is drawn from the corpus info
+ * of the target corpus of the a-attribute.
+ * 
+ * If there are no a-attributes on this corpus, an empty array is returned.
+ * 
+ * @param string $corpus  The corpus whose a-attributes are to be returned.
+ */
+function list_corpus_alignments($corpus)
+{
+	$corpus = mysql_real_escape_string($corpus);
+	
+	$result = do_mysql_query("select corpus_alignments.target as `targ`, corpus_info.title as `desc` 
+									from corpus_alignments left join corpus_info on corpus_alignments.target = corpus_info.corpus 
+									where corpus_alignments.corpus = '$corpus'");
+	$list = array();
+	
+	while (false !== ($o = mysql_fetch_object($result)))
+		$list[$o->targ] = $o->desc;
+	
+	return $list;
+}
+
+/**
+ * Checks the global user's permissions on a set of available alignment permissions.
+ * 
+ * Removes any that the User does not have at least restricted-level access to.
+ * 
+ * @param  array $alignments  An array of alignment handle=>title pairs as returned by list_corpus_alignments()
+ * @return array              Copy of input array, with any no-permission corpora deleted. 
+ *                            (This may be an empty array.)
+ */
+function check_alignment_permissions($alignments)
+{
+	global $User;
+	
+	if ($User->is_admin())
+		/* little shortcut since the admin user can always access everything. */
+		return $alignments;
+	else
+	{
+		$seek_permissions = array(PRIVILEGE_TYPE_CORPUS_FULL,PRIVILEGE_TYPE_CORPUS_NORMAL,PRIVILEGE_TYPE_CORPUS_RESTRICTED);
+		
+		$allowed_alignments = array();
+		
+		foreach ($alignments as $aligned_corpus => $desc)
+		{
+			foreach($User->privileges as $p)
+			{
+				/* check permission type FIRST to short-circuit use of in-array on non-array scope object */ 
+				if (in_array($p->type, $seek_permissions) && in_array($aligned_corpus, $p->scope_object))
+				{
+					$allowed_alignments[$aligned_corpus] = $desc;
+					break;
+				}
+			}
+		}
+
+		return $allowed_alignments;
+	}
+}
+
+
+
+
+
 /*
- * ===============================
- * FUNCTIONS DEALING WITH METADATA
- * ===============================
+ * ====================================
+ * FUNCTIONS DEALING WITH TEXT METADATA
+ * ====================================
  */
 
 
@@ -621,7 +772,7 @@ function corpus_annotation_taglist($field, $corpus = NULL)
  * Format: an array of objects (keys = field handles). 
  * Each object has 3 members: handle, description, datatype.
  */ 
-function metadata_get_array_of_metadata($corpus = NULL)
+function metadata_get_array_of_metadata($corpus = NULL)    /// NB, a consistent title would be get_all_text_metadata_info()
 {
 	$corpus = safe_specified_or_global_corpus($corpus);
 	
@@ -737,10 +888,9 @@ function metadata_expand_attribute($field, $value, $corpus = NULL)
 	$efield = mysql_real_escape_string($field);
 	$value  = mysql_real_escape_string($value);
 	
-	$sql_query = 'SELECT description FROM text_metadata_values WHERE corpus = '
-		. "'$corpus' AND field_handle = '$efield' AND handle = '$value'";
+	$sql = "SELECT description FROM text_metadata_values WHERE corpus = '$corpus' AND field_handle = '$efield' AND handle = '$value'";
 
-	$result = do_mysql_query($sql_query);
+	$result = do_mysql_query($sql);
 
 	if (mysql_num_rows($result) == 0)
 		$exp_val = $value;
@@ -778,9 +928,9 @@ function metadata_of_text($text_id, $fields = NULL, $corpus = NULL)
 		$sql_fields = '`' . implode('`,`', $fields) . '`';
 	}
 
-	$sql_query = "select $sql_fields from text_metadata_for_$corpus where text_id = '$text_id'";
+	$sql = "select $sql_fields from text_metadata_for_$corpus where text_id = '$text_id'";
 	
-	return mysql_fetch_assoc(do_mysql_query($sql_query));
+	return mysql_fetch_assoc(do_mysql_query($sql));
 }
 
 
@@ -862,11 +1012,11 @@ function metadata_size_of_cat($classification, $category, $corpus = NULL)
 	$classification = mysql_real_escape_string($classification);
 	$category       = mysql_real_escape_string($category);
 
-	$sql_query = "SELECT sum(words) FROM text_metadata_for_$corpus where $classification = '$category'";
-	list($size_in_words) = mysql_fetch_row(do_mysql_query($sql_query));
+	$sql = "SELECT sum(words) FROM text_metadata_for_$corpus where $classification = '$category'";
+	list($size_in_words) = mysql_fetch_row(do_mysql_query($sql));
 
-	$sql_query = "SELECT count(*) FROM text_metadata_for_$corpus where $classification = '$category'";
-	list($size_in_files) = mysql_fetch_row(do_mysql_query($sql_query));
+	$sql = "SELECT count(*) FROM text_metadata_for_$corpus where $classification = '$category'";
+	list($size_in_files) = mysql_fetch_row(do_mysql_query($sql));
 
 	return array($size_in_words, $size_in_files);
 }
@@ -882,11 +1032,11 @@ function metadata_size_of_cat_thinned($classification, $category, $class2, $cat2
 	$class2         = mysql_real_escape_string($class2);
 	$cat2           = mysql_real_escape_string($cat2);
 
-	$sql_query = "SELECT sum(words) FROM text_metadata_for_$corpus where $classification = '$category' and $class2 = '$cat2'";
-	list($size_in_words) = mysql_fetch_row(do_mysql_query($sql_query));
+	$sql = "SELECT sum(words) FROM text_metadata_for_$corpus where $classification = '$category' and $class2 = '$cat2'";
+	list($size_in_words) = mysql_fetch_row(do_mysql_query($sql));
 
-	$sql_query = "SELECT count(*) FROM text_metadata_for_$corpus where $classification = '$category' and $class2 = '$cat2'";
-	list($size_in_files) = mysql_fetch_row(do_mysql_query($sql_query));
+	$sql = "SELECT count(*) FROM text_metadata_for_$corpus where $classification = '$category' and $class2 = '$cat2'";
+	list($size_in_files) = mysql_fetch_row(do_mysql_query($sql));
 
 	return array($size_in_words, $size_in_files);
 }
@@ -897,14 +1047,26 @@ function metadata_size_of_cat_thinned($classification, $category, $class2, $cat2
 /** 
  * Counts the number of words in each text class for this corpus,
  * and updates the table containing that info.
+ * 
+ * This is done for a single classification, if a handle is provided;
+ * if not, it is donefor all classifications.
+ * 
+ * @param string $corpus  The corpus.
+ * @param string $handle  Optional handle of the classification to work on; 
+ *                        if none is provided, all classifications are processed.
  */
-function metadata_calculate_category_sizes($corpus)
+function metadata_calculate_category_sizes($corpus, $handle = NULL)
 {
 	$corpus = mysql_real_escape_string($corpus);
 
 	/* get a list of classification schemes */
-	$sql_query = "select handle from text_metadata_fields where corpus = '$corpus' and datatype = " . METADATA_TYPE_CLASSIFICATION;
-	$result_list_of_classifications = do_mysql_query($sql_query);
+	$sql = "select handle from text_metadata_fields where corpus = '$corpus' and datatype = " . METADATA_TYPE_CLASSIFICATION;
+	if (!empty($handle))
+	{
+		$handle = mysql_real_escape_string($handle);
+		$sql .= " and handle = '$handle'";
+	}
+	$result_list_of_classifications = do_mysql_query($sql);
 	
 	/* for each classification scheme ... */
 	while( ($c = mysql_fetch_row($result_list_of_classifications) ) != false)
@@ -912,10 +1074,10 @@ function metadata_calculate_category_sizes($corpus)
 		$classification_handle = $c[0];
 		
 		/* get a list of categories */
-		$sql_query = "select handle from text_metadata_values 
+		$sql = "select handle from text_metadata_values 
 						where corpus = '$corpus' and field_handle = '$classification_handle'";
 
-		$result_list_of_categories = do_mysql_query($sql_query);
+		$result_list_of_categories = do_mysql_query($sql);
 
 	
 		/* for each category handle found... */
@@ -924,21 +1086,21 @@ function metadata_calculate_category_sizes($corpus)
 			$category_handle = $d[0];
 			
 			/* how many files / words fall into that category? */
-			$sql_query = "select count(*), sum(words) from text_metadata_for_$corpus 
+			$sql = "select count(*), sum(words) from text_metadata_for_$corpus 
 							where $classification_handle = '$category_handle'";
 			
-			$result_counts = do_mysql_query($sql_query);
+			$result_counts = do_mysql_query($sql);
 
 			if (mysql_num_rows($result_counts) > 0)
 			{
 				list($file_count, $word_count) = mysql_fetch_row($result_counts);
 
-				$sql_query = "update text_metadata_values set category_num_files = '$file_count',
+				$sql = "update text_metadata_values set category_num_files = '$file_count',
 					category_num_words = '$word_count'
 					where corpus = '$corpus' 
 					and field_handle = '$classification_handle' 
 					and handle = '$category_handle'";
-				do_mysql_query($sql_query);
+				do_mysql_query($sql);
 			}
 			unset($result_counts);
 		} /* loop for each category */
@@ -946,6 +1108,217 @@ function metadata_calculate_category_sizes($corpus)
 		unset($result_list_of_categories);
 	} /* loop for each classification scheme */
 }
+
+
+/**
+ * Freetext metadata fields are allowed to contain certain special forms which indicate
+ * external resources of one kind or another. These are detected by examining the value's
+ * "prefix", which is the part of the value before the first colon.
+ * 
+ * This function takes a value from a metadata table and returns a link or a video/audio/img
+ * embed that can be sent to the browser.
+ * 
+ * @param  string $value  A text/idlink metadata table single value.
+ * @return string         HTML render of the value to display.
+ */
+function render_metadata_freetext_value($value)
+{
+	/* if the value is a URL, convert it to a link;
+	 * also allow audio, image, video, YouTube embeds */
+	if (false !== strpos($value, ':') )
+	{
+		list($prefix, $url) = explode(':', $value, 2);
+		
+		switch($prefix)
+		{
+		case 'http':
+		case 'https':
+		case 'ftp':
+			/* pipe is used as a delimiter between URL and linktext to show. */
+			if (false !== strpos($value, '|'))
+				list($url, $linktext) = explode('|', $value);
+			else
+				$url = $linktext = $value;
+			$show = '<a target="_blank" href="'.$url.'">'.escape_html($linktext).'</a>';
+			break;
+			
+		case 'youtube':
+			/* if it's a YouTube URL of one of two kinds, extract the ID; otherwise, it should be a code already */
+			if (false !== strpos($url, 'youtube.com'))
+			{
+				/* accept EITHER a standard yt URL, OR a yt embed URL. */
+				if (preg_match('|(?:https?://)(?:www\.)youtube\.com/watch\?.*?v=(.*)[\?&/]?|i', $url, $m))
+					$ytid = $m[1]; 
+				else if (preg_match('|(?:https?://)(?:www\.)youtube\.com/embed/(.*)[\?/]?|i', $url, $m))
+					$ytid = $m[1];
+				else
+					/* should never be reached unless bad URL used */
+					$ytid = $url;
+			}
+			else
+				$ytid = $url;
+			$show = '<iframe width="640" height="480" src="http://www.youtube.com/embed/' . $ytid . '" frameborder="0" allowfullscreen></iframe>';
+			break;
+			
+		case 'video':
+			/* we do not specify height and width: we let the video itself determine that. */
+			$show = '<video src="' . $url . '" controls preload="metadata"><a target="_blank" href="' . $url . '">[Click here for videofile]</a></video>';
+			break;
+			
+		case 'audio':
+			$show = '<audio src="' . $url . '" controls><a target="_blank" href="' . $url . '">[Click here for audiofile]</a></audio>';
+			break;
+		
+		case 'image':
+			/* Dynamic popup layer: see textmeta.js */
+			$show = '<a class="menuItem" href="" onClick="textmeta_add_iframe(&quot;' . $url . '&quot;); return false;">[Click here to display]</a>';
+			break;
+					
+		default;
+			/* unrecognised prefix: treat as just normal value-content */
+			$show = escape_html($value);
+			break;
+		}
+	}
+	/* otherwise simply escape it */
+	else
+		$show = escape_html($value);
+	
+	return $show;
+}
+
+
+
+/**
+ * Add a new field to a corpus's text metadata.
+ * 
+ * @param string $corpus       Corpus we are adding to.
+ * @param string $handle       Handle of the column to add.
+ * @param string $description  Description of the column to add.
+ * @param int    $datatype     Datatype constant for the new column.
+ * @param string $input_path   Path to the input file: se notes on add_field_to_metadata_table().
+ */
+function add_text_metadata_field($corpus, $handle, $description, $datatype, $input_path)
+{
+	$datatype = (metadata_valid_datatype($datatype) ? (int) $datatype : METADATA_TYPE_FREETEXT);
+	
+	if (in_array($handle, metadata_list_fields($corpus)))
+		exiterror("Cannot add metadata field $handle because a field by that name already exists.");
+	
+	add_field_to_metadata_table("text_metadata_for_$corpus", $handle, $datatype, $input_path);
+	
+	/* update the text_metadata_fields list */
+	$corpus = cqpweb_handle_enforce($corpus);
+	$handle = cqpweb_handle_enforce($handle);
+	$description = mysql_real_escape_string($description);
+
+	do_mysql_query("insert into text_metadata_fields 
+		(corpus, handle, description, datatype) 
+			VALUES 
+		('$corpus','$handle','$description', $datatype)");
+
+	/* and, if it is a classification, scan for values, then update the cat sizes for the values etc. */
+	if (METADATA_TYPE_CLASSIFICATION == $datatype)
+	{
+		$result = do_mysql_query("select distinct($handle) from text_metadata_for_$corpus");
+
+		while (false !== ($r = mysql_fetch_row($result)))
+			do_mysql_query("insert into text_metadata_values 
+				(corpus, field_handle, handle)
+					values
+				('$corpus', '$handle', '{$r[0]}')"
+				);
+
+		metadata_calculate_category_sizes($corpus, $handle);
+	}
+}
+
+/**
+ * This function adds a column to a metadata table, but *does not* 
+ * do any of the associated actions e.g. inserting a line into the monitoring table,
+ * or compiling-and-inserting the list of classification categories.
+ * 
+ * @see add_text_metadata_field
+ * @see add_idlink_field
+ * 
+ * @param string $table        Database table we are modifying.
+ * @param string $handle       Handle of the column to add.
+ * @param int    $datatype     Datatype constant for the new column.
+ * @param string $input_path   Fielsystem path for the input file, which should be
+ *                             a plain text file wiht 2 tab-separated columns:
+ *                             col 1. the ID, col 2. the new field's value for that ID.
+ *                             No check is made for ID uniqueness or for presence of all IDs.
+ */
+function add_field_to_metadata_table($table, $handle, $datatype, $input_path)
+{
+	global $Config;
+	
+	$table = mysql_real_escape_string($table);
+	$handle = cqpweb_handle_enforce($handle);
+	$datatype = (int) $datatype;
+	
+	/* check file exists by trying to open */
+	if (false === ($source = fopen($input_path, 'r')))
+		exiterror("Could not open the specified metadata input file.");
+	
+	if (preg_match('/^text_metadata_for_/', $table))
+		$id_field = 'text_id';
+	else
+		$id_field = '__ID';
+		
+	/* add column to the table; if a duplicate colmn name has been used, this will abort. Caller should also check this, for neatness. */
+	do_mysql_query("alter table `$table` add column `$handle` {$Config->metadata_mysql_type_map[$datatype]}");
+	/* note, ideally we'd add it "BEFROE `words`" for neatness, but this unfortunately does nto work. MySQl has only AFTER. */ 
+	
+	switch($datatype)
+	{
+	case METADATA_TYPE_CLASSIFICATION:
+	case METADATA_TYPE_UNIQUE_ID:
+	case METADATA_TYPE_IDLINK:
+		$line_regex = '/^(\w+)\t(\w+)$/';
+		break;
+	default:
+		/* all other datatypes */
+		$line_regex = '/^(\w+)\t(.*)$/';
+		break;
+		/* note: this will need adjusting for dataypes such as DATE. */
+	}
+	
+	$line_n = 0;
+	
+	while (false != ($line = fgets($source)))
+	{
+		$line_n++;
+		$line = rtrim($line, "\r\n");
+		if (empty($line))
+			continue;
+
+		/* check format of line */
+		if (! preg_match($line_regex, $line, $m))
+		{
+// show_var($line_regex); show_var($line);
+			do_mysql_query("alter table `$table` drop column `$handle`");
+			exiterror("Badly formed line: # $line_n in file $input_path.");
+		}
+		$id = $m[1];
+		$val = mysql_real_escape_string($m[2]);			
+		
+		/* insert the actual data. Doing it one at a time is abit inefficient but this is 
+		 * not a time-critical action. */
+		do_mysql_query("update `$table` set `$handle` = '$val' where `$id_field` = '$id'");
+	}
+	
+	fclose($source);
+	
+	if (METADATA_TYPE_CLASSIFICATION == $datatype)
+		do_mysql_query("alter table `$table` add index (`$handle`)");
+}
+
+
+
+
+
+
 
 
 /*

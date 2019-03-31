@@ -31,15 +31,10 @@
 
 /* this script emits nothing on stdout until the last minute, because it can alternatively write a plaintext file as HTTP attachment */
 
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
 
-
-/* ------------ *
- * BEGIN SCRIPT *
- * ------------ */
-
-
-
-/* initialise variables from settings files  */
 require('../lib/environment.inc.php');
 
 
@@ -58,7 +53,6 @@ require("../lib/cache.inc.php");
 require("../lib/subcorpus.inc.php");
 require("../lib/db.inc.php");
 require("../lib/rface.inc.php");
-require("../lib/cwb.inc.php");
 require("../lib/cqp.inc.php");
 
 
@@ -235,7 +229,7 @@ else
 
 if (! isset($statistic[$calc_stat]) )
 	/* non-existent stat, so go to default */
-	$calc_stat = $Conifig->default_colloc_calc_stat;
+	$calc_stat = $Config->default_colloc_calc_stat;
 
 
 
@@ -507,13 +501,12 @@ $result = do_mysql_query($sql);
 
 
 
-
 /* "time" == time to create the db (if nec), create the freqtable (if nec), + run the BIIIG query */
 $time_taken = round(microtime(true) - $start_time, 3);
 
 $description = "There are " . number_format((float)$db_types_total) . " different " 
 	. strtolower($att_desc[$att_for_calc]) 
-	. "s in your collocation database for &ldquo;" . escape_html($query_record->cqp_query) . "}&rdquo;. (" 
+	. "s in your collocation database for &ldquo;" . escape_html($query_record->cqp_query) . "&rdquo;. (" 
 	. $query_record->print_solution_heading(false) . ') ' 
 	. format_time_string($time_taken, $is_new_db)
 	;
@@ -737,7 +730,7 @@ else
 	<?php
 	
 	$i = $begin_at;
-	while (( $row = mysql_fetch_assoc($result)) !== false)
+	while (false !== ($row = mysql_fetch_assoc($result)))
 	{
 		$i++;
 	

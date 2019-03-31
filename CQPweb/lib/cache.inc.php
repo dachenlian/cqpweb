@@ -104,16 +104,14 @@ class QueryRecord
 	/** the cqp-syntax content of the original query */
 	public $cqp_query;
 	
+// following two both now commented out, as it's been almost a year since they were made private and nothing yet seems to be broken... 
 // 	/* * corpus "restrictions" used when the query was first run, in format as stored in the database. */
- 	private $restrictions; // retained for the nonce as a private, so that if anything references it directly, things will break.
-	
+// 	private $restrictions; // retained for the nonce as a private, so that if anything references it directly, things will break.
 // 	/* * integer ID of the subcorpus within which the query was first run, in databse fromat; none = "" (empty string) */
- 	private $subcorpus;// retained for the nonce as a private, so that if anything references it directly, things will break.
+// 	private $subcorpus;// retained for the nonce as a private, so that if anything references it directly, things will break.
 	
 	/** The query scope: serialisation of the QueryScope (Subcorpus or Restriction) under which the query ran. */
 	public $query_scope;
-	
-//TODO end of the pair we want to replace with just one. 
 	
 	/** database-encoded postprocess string */
 	public /*private*/ $postprocess; 
@@ -125,9 +123,9 @@ class QueryRecord
 	/** 
 	 * Time of query (unix time integer). 
 	 * 
-	 * If this is a user-saved query, this represents the time at which it was originally saved.
-	 * If it is a categorised query, this represents the time when its categorisations were last updated. 
-	 * If it is an unsaved in-cache query, then this is set to last time the query was "touched" e.g. used for a concordance.
+	 * If query is a user-saved query, this represents the time at which it was originally saved.
+	 * If query is a categorised query, this represents the time when its categorisations were last updated. 
+	 * If query is an unsaved in-cache query, then this is set to last time the query was "touched" e.g. used for a concordance.
 	 * 
 	 * Note that for a postprocessed query it is the creation time of the postprocessed version, NOT the underlying original.
 	 */
@@ -244,13 +242,20 @@ class QueryRecord
 		/* the constructor does bugger all: a query record has to be *loaded* before we can do anything.... */
 	}
 
-	// TODO. Is it necessary to clone inner objects on clone?????? Not with qscope, since it can never change for a given query once created.
-// 	public function __clone()
-// 	{
-// NOT NEEDED but somehting similar might be needed down the line. 
-// 		if (is_object($this->qscope))
-// 			$this->qscope = clone $this->qscope;
-// 	}
+	/* A note: we have no clone method yet, because we do not yet have any inner-objects that are mutable.
+	 * 
+	 * The only inner object at the moment is QueryScope, and the QueryScope is not mutable for a given
+	 * query once created.
+	 * 
+	 * The code below illustrates how this would work using the QueryScope object. But as noted, it's totally not needed.
+	public function __clone()
+	{
+		if (is_object($this->qscope))
+			$this->qscope = clone $this->qscope;
+	}
+	 */
+	
+	
 	
 	/*
 	 * Creator functions. (Roll together a call to "new" and a call to one of the "load" functions.)
@@ -261,25 +266,23 @@ class QueryRecord
 	 * Use the save method to write the query to the cache table.
 	 * 
 	 * @see QueryRecord::save
-	 * @param string $qname             Unique identifier for the query in cache. Must correspond to an actually-existing 
+	 * @param  string $qname            Unique identifier for the query in cache. Must correspond to an actually-existing 
 	 *                                  file in CQPweb's cache directory.
-	 * @param string $user              Username of the user to whom this query "belongs".
-	 * @param string $corpus            The corpus in which the query ran.
-	 * @param string $query_mode        One of the mode-indicator strings. 
-	 * @param string $simple_query      Text of the CEQL query from which the CQP code was created. An empty value can be passed if there was none.
-	 * @param string $cqp_query         The CQP code of the query. An empty value can be passed if there was none.
-	 * @param QueryScope $qscope        Object representing the scope within which this query was executed. 
+	 * @param  string $user             Username of the user to whom this query "belongs".
+	 * @param  string $corpus           The corpus in which the query ran.
+	 * @param  string $query_mode       One of the mode-indicator strings. 
+	 * @param  string $simple_query     Text of the CEQL query from which the CQP code was created. An empty value can be passed if there was none.
+	 * @param  string $cqp_query        The CQP code of the query. An empty value can be passed if there was none.
+	 * @param  QueryScope $qscope       Object representing the scope within which this query was executed. 
 	 *                                  If an empty value, a whole-corpus query scope is assumed.
-// 	 * @ param string $restrictions      The restrictions used when the query ran (an empty value e.g. NULL can be passed).
-// 	 * @ param string $subcorpus         The subcorpus used when the query ran (an empty value e.g. NULL can be passed).
 	 *                                  Note that only one of $restrictions and $suibcorpus may be non-empty.
-	 * @param int    $n_hits            Number of hits.
-	 * @param int    $n_hit_texts       Number of texts in which 1+ hits occur.
-	 * @param string $postprocess       A postprocess string in database format, if a postprocess has been run. 
+	 * @param  int    $n_hits           Number of hits.
+	 * @param  int    $n_hit_texts      Number of texts in which 1+ hits occur.
+	 * @param  string $postprocess      A postprocess string in database format, if a postprocess has been run. 
 	 *                                  If no postprocess, pass empty string or omit.
-	 * @param string $hits_left         A postprocess "hits left" string in database format, if a postprocess has been run. 
+	 * @param  string $hits_left        A postprocess "hits left" string in database format, if a postprocess has been run. 
 	 *                                  If no postprocess, pass empty string or omit. 
-	 * @return QueryRecord        Returns the created object or false in case of error.
+	 * @return QueryRecord              Returns the created object or false in case of error.
 	 */
 	public static function create(
 									$qname,
@@ -289,16 +292,12 @@ class QueryRecord
 									$simple_query,
 									$cqp_query,
 									$qscope,
-// 									$restrictions,// => scope
-// 									$subcorpus,// => scope
 									$n_hits,
 									$n_hit_texts,
 									$postprocess = NULL,
 									$hits_left = NULL
 									)
 	{
-// 		global $Config;
-		
 		$obj = new self();
 		
 		/* set each of the values needed for a DB commit one by one. Test for empty values where appropriate. */
@@ -326,7 +325,6 @@ class QueryRecord
 		$obj->postprocess  = (empty($postprocess)  ? '' : $postprocess); 
 		$obj->hits_left    = (empty($hits_left)    ? '' : $hits_left);
 		
-// 		$obj->qscope = QueryScope::new_by_unserialise(empty($subcorpus) ? $restrictions : $subcorpus);
 		$obj->qscope = $qscope;
 		$obj->query_scope = $obj->qscope->serialise();
 		
@@ -339,7 +337,6 @@ class QueryRecord
 		$obj->saved = CACHE_STATUS_UNSAVED;
 		$obj->save_name = '';
 		$obj->set_time_to_now();
-		
 		
 		$obj->has_been_loaded = true;
 	
@@ -364,21 +361,23 @@ class QueryRecord
 	 * Create a new query record object from a set of parameters to be matched in the cache
 	 * (i.e. "find a cached query for THIS search-pattern, in THIS corpus, with THESE additional features...").
 	 * 
-	 * @param string $corpus        The corpus to match.
-	 * @param string $cqp_query     The cqp query to match. 
-	 * @param string $query_scope   A serialised query scope to match. (Any empty value becomes an empty string.)
-	 *                              Or, it can be an actual QueryScope object, in which case the object will be stored,
-	 *                              and its serialisation used to check the database.
-	 * @param string $postprocess   A database-format postprocess string to match.
+	 * @param  string $corpus        The corpus to match.
+	 * @param  string $query_mode    The mode-indicator string to match. 
+	 * @param  string $cqp_query     The cqp query to match. 
+	 * @param  string $query_scope   A serialised query scope to match. (Any empty value becomes an empty string.)
+	 *                               Or, it can be an actual QueryScope object, in which case the object will be stored,
+	 *                               and its serialisation used to check the database.
+	 * @param  string $postprocess   A database-format postprocess string to match.
 	 * @return QueryRecord    Returns the created object or false in case of error.
 	 */
-	public static function new_from_params($corpus, $cqp_query, $query_scope = '', $postprocess = '')
+	public static function new_from_params($corpus, $query_mode, $cqp_query, $query_scope = '', $postprocess = '')
 	{
 		$newobj = new self();
-		if (!$newobj->load_from_params($corpus, $cqp_query, $query_scope, $postprocess))
+		if (!$newobj->load_from_params($corpus, $query_mode, $cqp_query, $query_scope, $postprocess))
 			return false;
 		return $newobj;
 	}
+	
 	/**
 	 * Create a new query record object from a MySQL result set. 
 	 * 
@@ -411,17 +410,19 @@ class QueryRecord
 	/**
 	 * Loads this object with the query record that matches the given parameters.
 	 * 
-	 * @param string $corpus        The corpus to match.
-	 * @param string $cqp_query     The cqp query to match. 
-	 * @param string $query_scope   A serialised query scope to match. (Any empty value becomes an empty string.) 
-	 *                              It's allowed for a QueryScope object to be passed instead.
-	 * @param string $postprocess   A database-format postprocess string to match.
-	 * @return bool                 True if the object was loaded (i.e. if a query with those params exists in cache), otherwise false.
+	 * @param  string $corpus        The corpus to match.
+	 * @param  string $query_mode    The mode-indicator string to match. 
+	 * @param  string $cqp_query     The cqp query to match. 
+	 * @param  string $query_scope   A serialised query scope to match. (Any empty value becomes an empty string.) 
+	 *                               It's allowed for a QueryScope object to be passed instead.
+	 * @param  string $postprocess   A database-format postprocess string to match.
+	 * @return bool                  True if the object was loaded (i.e. if a query with those params exists in cache), otherwise false.
 	 */
-	public function load_from_params($corpus, $cqp_query, $query_scope = '', $postprocess = '')
+	public function load_from_params($corpus, $query_mode, $cqp_query, $query_scope = '', $postprocess = '')
 	{
 		/* make safe the parameters as passed in..... */
 		$corpus       = cqpweb_handle_enforce($corpus);
+		$query_mode   = cqpweb_handle_enforce($query_mode);
 		$cqp_query    = mysql_real_escape_string($cqp_query);
 		
 		if (is_object($query_scope))
@@ -437,6 +438,7 @@ class QueryRecord
 		
 		$result = do_mysql_query("SELECT * from saved_queries
 									where corpus     = '$corpus'
+									and query_mode   = '$query_mode'
 									and cqp_query    = '$cqp_query'
 									and query_scope  = '$sql_query_scope'
 									and postprocess  = '$postprocess'
@@ -608,9 +610,9 @@ class QueryRecord
 	 * $nq->execute_postprocess($de);
 	 * echo "{$nq->qname}    {$qr->qname}", PHP_EOL;        # will not be the same. 
 	 * 
-	 * @param CQPwebPostprocess $descriptor  Object containing information about the postprocess to be applied.#
+	 * @param CQPwebPostprocess $descriptor  Object containing information about the postprocess to be applied.
 	 * @return bool                          True iff the postprocessed query has resulted in a query with more than one hit;
-	 *                                       otherwise false (and this object is in disarray!.
+	 *                                       otherwise false (and this object is in disarray!).
 	 */
 	public function do_postprocess($descriptor)
 	{
@@ -630,8 +632,8 @@ class QueryRecord
 		$this->set_time_to_now();
 		/* note that the individual functions update hits_left based on their operation! */
 
-		/* a temp file may or may not be needed. */
-		$this->pp_temp_file = "{$Config->dir->cache}/temp_{$descriptor->postprocess_type}_{$this->qname}.tbl";
+		/* a temp file may or may not be needed. realpath, because it's going to be used for MySQL outfile. */
+		$this->pp_temp_file = realpath($Config->dir->cache) . "/temp_{$descriptor->postprocess_type}_{$this->qname}.tbl";
 		
 		/* all methods return false if the postprocess resulted in an empty query (which will not be cached) */
 		$method = 'do_postprocess_' . $descriptor->postprocess_type;
@@ -781,10 +783,10 @@ class QueryRecord
 		/* this method call creates the DB if it doesn't already exist */
 		$sql = $descriptor->text_sql_for_queryfile($orig_record);
 	
-		$solutions_remaining = do_mysql_outfile_query($sql, $tempfile);
+		$solutions_remaining = do_mysql_outfile_query($sql, $this->pp_temp_file);
 	
 		$this->hits_left .= (empty($this->hits_left) ? '' : '~') . $solutions_remaining;
-		
+	
 		return $this->do_postprocess_undump_and_filesize($solutions_remaining);
 	}
 	
@@ -981,7 +983,7 @@ class QueryRecord
 // // 				if (! empty($sc_record->restrictions))
 // // 					$sc_conditions = $sc_record->restrictions;
 // // 				else
-// // 					$sc_conditions = translate_itemlist_to_where($sc_record->get_item_list(), true);
+// // 					$sc_conditions = translate_itemlist_to_where($sc_record->get_item_list());
 				
 // 				$this->scope_reduction_whereclause = " where $sc_conditions $pp_where ";
 // 			}
@@ -1072,6 +1074,14 @@ class QueryRecord
 		sort($all_extra);
 		
 		return $this->qscope->size_of_classification_intersect($all_extra);
+		
+		/* A TODO note:
+			If the query scope is the whole corpus, this can be retrieved from text_metadata values (num words/. num files)
+
+			(or maybe this is an optimisation in retriciton? If the restriction = just one cat, don’t queryt the metadata table, 
+			instead just use text metadata values...
+		 */
+
 
 		//TODO
 		//TODO
@@ -1084,6 +1094,7 @@ class QueryRecord
 		// TODO fix the above, obviously: we should be able to get some kind of scope reduction even when it's not all texts.
 		// currently it just returns false.
 		
+		// the old code from before restricitons got ricockulously more complex: 
 // 		$morewhere = '';
 // 		foreach($extra as $e)
 // 		{
@@ -1268,16 +1279,16 @@ class QueryRecord
 				$tag_filter_clause = "AND $tag_filter_att $op '{$args[5]}'";
 			}
 
-			$sql_query = "select dist from {$args[0]}
+			$sql = "select dist from {$args[0]}
 				where {$args[1]} = '{$args[2]}'
 				$tag_filter_clause
 				and dist between {$args[3]} and {$args[4]}
 				$coll_order_by";
 		}
 
-		if (isset($sql_query))
+		if (isset($sql))
 		{
-			$result = do_mysql_query($sql_query);
+			$result = do_mysql_query($sql);
 
 			$highlight_positions = array();
 			while ( ($r = mysql_fetch_row($result)) !== false )
@@ -1381,6 +1392,8 @@ class QueryRecord
 	
 	/**
 	 * Touches the DB record of this query without changing anything else.
+	 * 
+	 * @return bool  True for success, false for failure.
 	 */
 	public function touch()
 	{
@@ -1432,11 +1445,11 @@ class QueryRecord
 	/**
 	 * Provides a printable string version of this query's "time" value. 
 	 * 
+	 * @see CQPWEB_UI_DATE_FORMAT
 	 * @see QueryRecord::$time_of_query
 	 */
 	public function print_time()
 	{
-		/* NB. Changing the date string below should, ultimately, affect all query-date representations across CQPweb. */
 		return date(CQPWEB_UI_DATE_FORMAT, $this->time_of_query);
 	}
 
@@ -1456,12 +1469,15 @@ class QueryRecord
 		{
 			$final_string = 'Your query ' . ($html?'&ldquo;':'"');
 		
-			if ( $this->query_mode == 'cqp' || empty($this->simple_query))
+			if ( 'cqp' == $this->query_mode || empty($this->simple_query))
 				$final_string .= ($html ? escape_html($this->cqp_query)    : $this->cqp_query);
 			else
 				$final_string .= ($html ? escape_html($this->simple_query) : $this->simple_query);
 			
 			$final_string .= ($html?'&rdquo;':'"');
+			
+			if ('sq_case' == $this->query_mode)
+				$final_string .= ' (case-sensitive)';
 		}
 		
 		$desc = $this->qscope->print_description($html);
@@ -1667,9 +1683,8 @@ class QueryRecord
 				$record = retrieve_plugin_info($args[0]);
 				$obj = new $record->class($record->path);
 				/* custom PP descs are allowed to be empty, in which case, we just add the new number of hits. */
-				$description .= $obj->get_postprocess_description($html)
-					//Longterm-TODO make get_postprocess_description into a static method???
-					. " $bdo_tag1("	. number_format((float)$this->hits_left_stack[$i]) . ' hits)'. $bdo_tag2;
+				$description .= 
+					$obj->get_postprocess_description($html) . " $bdo_tag1(" . number_format((float)$this->hits_left_stack[$i]) . ' hits)'. $bdo_tag2;
 				$i++;
 				unset($obj);
 				break;
@@ -1732,7 +1747,7 @@ function cqp_file_unlink($qname)
  * Copies the cache file corresponding to oldqname as newqname; if a file
  * relating to newqname exists already, it will NOT be overwritten.
  * 
- * Returns true on success and false on failure.
+ * @return bool  True on success and false on failure.
  */
 function cqp_file_copy($oldqname, $newqname)
 {
@@ -1761,6 +1776,81 @@ function cqp_file_path($qname)
 		return $globbed[0];
 }
 
+
+
+
+
+/**
+ * Checks whether a file has the correct CQP format for saved queries
+ * - that is, that it begins with the magic number that all CQP query files have.
+ * 
+ * Can also potentially check the two strings subsequenlty embedded. 
+ * 
+ * @param  string $path_or_qname
+ * @param  bool $is_path                    If true (default), first parameter is treated as filesystem path.
+ *                                          If false, first parameter is treated as a query name handle, from which
+ *                                          a path must be deduced. 
+ * @param  bool $also_check_env_registry    If true, as well as the magic number, the registry directory embedded after
+ *                                          that is checked for its match with the path in $Config->dir->registry.
+ * @param  bool $also_check_env_corpus      If true, as well as the magic number AND the registry path, the corpus handle 
+ *                                          embedded after both is checked for its match with the string $Corpus->cqp_name.
+ *                                          Note this implies the truth of $also_check_env_registry.
+ * @return bool                             True if the file exists, is readable and has correct CQP format (by magic number).array
+ *                                          Otherwise false.
+ */
+function cqp_file_check_format($path_or_qname, $is_path = true, $also_check_env_registry = true, $also_check_env_corpus = true)
+{
+	if ($is_path)
+		$path = $path_or_qname;
+	else
+	{
+		if (false === ($path = cqp_file_path($qname)))
+			return false;
+	}
+	
+	if ( ! is_readable($path) || false === ($src = fopen($path, 'r')))
+		return false;
+	
+	if (CQP_INTERFACE_FILE_MAGIC_NUMBER != fread($src, 4))
+		return false;
+	
+	
+	if ($also_check_env_registry || $also_check_env_corpus)
+	{
+		/* read reg string, check it matches, return false if not */
+		$registry = '';
+		while (0 != ord($c = fgetc($src)))
+			$registry .= $c;
+		
+		global $Config;
+		
+		/* we use real path becasue the config object may contain extra slashes, etc. */
+		if (realpath($registry) != realpath($Config->dir->registry))
+		{
+			fclose($src);
+			return false;
+		}
+	}
+	if ($also_check_env_corpus)
+	{
+		/* read corpus string, check it matches, return false if not */
+		$CORPUS_in_file = '';
+		while (0 != ord($c = fgetc($src)))
+			$CORPUS_in_file .= $c;
+		
+		global $Corpus;
+		
+		if ($CORPUS_in_file != $Corpus->cqp_name)
+		{
+			fclose($src);
+			return false;
+		}
+	}
+
+	/* if we've got here, everything is OK. */
+	fclose($src);
+	return true;
+}
 
 /**
  * Deletes a specified file from the cache directory, unconditionally.
@@ -1824,11 +1914,9 @@ function qname_unique($qname)
 {
 	while (true)
 	{
-		$sql_query = 'select query_name from saved_queries where query_name = \'' . mysql_real_escape_string($qname) . '\' limit 1';
+		$sql = 'select query_name from saved_queries where query_name = \'' . mysql_real_escape_string($qname) . '\' limit 1';
 	
-		$result = do_mysql_query($sql_query);
-
-		if (0 == mysql_num_rows($result))
+		if (0 == mysql_num_rows(do_mysql_query($sql)))
 			break;
 
 		$qname .= chr(mt_rand(0x41,0x5a));
@@ -1861,16 +1949,20 @@ function delete_cached_query($qname)
 /**
  * Duplicates a query in cache under a new query name identifier.
  * 
- * @param string $oldqname  The identfier of the existing query to duplicate. Must be a valid identifier that is in the DB.
- * @param string $newqname  The new identifier of the query to create. Must be a valid identifier not in the DB.
- * @return                  QueryRecord object for the new query if copied correctly, otherwise false (e.g. if the parameter rules are broken).
+ * @param  string $oldqname  The identfier of the existing query to duplicate. Must be a valid identifier that is in the DB.
+ * @param  string $newqname  The new identifier of the query to create. Must be a valid identifier not in the DB.
+ * @return QueryRecord       QueryRecord object for the new query if copied correctly, otherwise false.
+ *                           Possible reasons for false: (a) a query already exists with the specified new name.
+ *                           (b) No query exists in cache with the specified existing name.
+ *                           (c) The same string has been supplied for both parameters.
+ *                           (Possible TODO: add error message out-parameter to distinguish these?????)
  */
 function copy_cached_query($oldqname, $newqname)
 {
 	if ($oldqname == $newqname)
 		return false;
 	
-	/* doesn't copy if the $newqname already exists */	
+	/* doesn't copy if the $newqname already exists */
 	if (false !== QueryRecord::new_from_qname($newqname)) 
 		return false;
 	
@@ -1894,6 +1986,26 @@ function copy_cached_query($oldqname, $newqname)
 
 
 
+/**
+ * Checks whether a query exists in cache, based on itys qname.
+ * 
+ * This can also be checked by trying to create a QueryRecord using the new_from_qname method.
+ * However, this function does not have the overhead of setting up an entire QR (including, 
+ * possibly, a QueryScope!)  
+ * 
+ * This function works by checking the saved_queries table. It does not check whether the 
+ * actual CQP file exists!
+ * 
+ * @see                   cqp_file_exists
+ * @param  string $qname  The query ID to check.
+ * @return bool           True if the cache contains a query with the given name.
+ */
+function check_cached_query($qname)
+{
+	$qname = mysql_real_escape_string($qname);
+	$result = do_mysql_query("select query_name from saved_queries where query_name = '$qname'");
+	return (mysql_num_rows($result) > 0);
+}
 
 
 
@@ -1933,25 +2045,26 @@ function delete_cache_overflow($protect_user_saved = true)
 	list($current_size) = mysql_fetch_row(do_mysql_query("select sum(file_size) from saved_queries"));
 	
 
-	if ($current_size > $Config->cache_size_limit)
+	if ($current_size > $Config->query_cache_size_limit)
 	{
 		/* the cache has exceeded its size limit, ergo: */
 		
 		/* step two: how many bytes do we need to delete? */
-		$toDelete_size = $current_size - $Config->cache_size_limit;
+		$toDelete_size = $current_size - $Config->query_cache_size_limit;
 		
 		/* step three: get a list of deletable files */
-		$sql_query = "select query_name, file_size from saved_queries"
+		$sql = "select query_name, file_size from saved_queries"
 			. ($protect_user_saved ? " where saved = ".CACHE_STATUS_UNSAVED : "")
-			. " order by time_of_query asc";
+			. " order by time_of_query asc"
+			;
 			
-		$del_result = do_mysql_query($sql_query);
+		$del_result = do_mysql_query($sql);
 
 		/* step four: delete files from the list until we've deleted enough */
 		while ($toDelete_size > 0)
 		{
 			/* get the next most recent file from the savedQueries list */
-			if ( ! ($current_del_row = mysql_fetch_row($del_result)) )
+			if ( false === ($current_del_row = mysql_fetch_row($del_result)) )
 				break;
 
 			delete_cached_query($current_del_row[0]);
@@ -1960,8 +2073,7 @@ function delete_cache_overflow($protect_user_saved = true)
 		
 		/* have the above deletions done the trick? */
 		if ($toDelete_size > 0)
-				exiterror_cacheoverload();
-
+			exiterror_cacheoverload();
 	}
 }
 
@@ -1974,32 +2086,39 @@ function delete_cache_overflow($protect_user_saved = true)
 function clear_cache()
 {
 	global $Config;
+	global $User;
 	
-	/* this function can take a long time to run, so turn off the limits */
-	php_execute_time_unlimit();
+	if ($User->is_admin())
+	{
+		/* this function can take a long time to run, so turn off the limits */
+		php_execute_time_unlimit();
+		
+		
+		/* get a list of deletable queries */
+		$del_result = do_mysql_query("select query_name from saved_queries where saved = " . CACHE_STATUS_UNSAVED);
 	
+		/* delete queries */
+		while (false !== ($current_del_row = mysql_fetch_row($del_result)) )
+			delete_cached_query($current_del_row[0]);
+		
+		php_execute_time_relimit();
+	}
 	
-	/* get a list of deletable queries */
-	$del_result = do_mysql_query("select query_name from saved_queries where saved = " . CACHE_STATUS_UNSAVED);
-
-	/* delete queries */
-	while (false !== ($current_del_row = mysql_fetch_row($del_result)) )
-		delete_cached_query($current_del_row[0]);
-	
-	php_execute_time_relimit();
+	/* else do nothing because non-admin users aren't allowed to do this. */
 }
 
 
 
 
 /**
- * Checks a proposed save name to see if it is in use. 
+ * Checks a proposed save name to see if it is in use (for this user in this corpus). 
  * 
  * NOTE: this checks a *save name*, not a *query name* (qname) identifier.
- * Save names cannot be duplicated within a (user + corpus) combination.
+ * Save names cannot be duplicated within a (user + corpus) combination,
+ * but can be non-unique globally (whereas the query name is a unique key).
  * 
- * @param string $save_name  Name to check.
- * @return                   True if the save name is already in use; otherwise false.
+ * @param  string $save_name  Name to check.
+ * @return bool               True if the save name is already in use; otherwise false.
  */
 function save_name_in_use($save_name)
 {
@@ -2030,18 +2149,15 @@ function save_name_in_use($save_name)
  */
 function catquery_list_categories($qname)
 {
-	$sql_query = "select category_list from saved_catqueries where catquery_name = '"
-		. mysql_real_escape_string($qname)
-		.'\'';
-	$result = do_mysql_query($sql_query);
+	$result = do_mysql_query("select category_list from saved_catqueries where catquery_name='". mysql_real_escape_string($qname).'\'');
 	list($list) = mysql_fetch_row($result);
 	return explode('|', $list);
 }
 
 
 /**
- * Returns an array of category values for a given catquery, with ints (reference 
- * numbers) indexing strings (category names).
+ * Returns an array of category values for a given catquery, with ints 
+ * (reference numbers) indexing strings (category names).
  *
  * The from and to parameters specify the range of refnumbers in the catquery
  * that is desired to be returned; they are to be INCLUSIVE.
@@ -2081,6 +2197,8 @@ function catquery_find_dbname($qname)
 
 
 
+
+
 /*
  * ===============================
  * HISTORY TABLE RELATED FUNCTIONS
@@ -2099,17 +2217,13 @@ function catquery_find_dbname($qname)
  * We **don't** use a QueryRecord for the parameter, because it might be a query that
  * will not find any hits...
  */
-// function history_insert($instance_name, $cqp_query, $restrictions, $subcorpus, $simple_query, $qmode)
 function history_insert($instance_name, $cqp_query, $query_scope, $simple_query, $qmode)
 {
-	
 	global $User;
 	global $Corpus;
 
 	$escaped_cqp_query    = mysql_real_escape_string($cqp_query);
-// 	$escaped_restrictions = mysql_real_escape_string($restrictions);
-// 	$escaped_subcorpus    = mysql_real_escape_string($subcorpus);
- 	$escaped_query_scope    = mysql_real_escape_string($query_scope);
+ 	$escaped_query_scope  = mysql_real_escape_string($query_scope);
 	$escaped_simple_query = mysql_real_escape_string($simple_query);
 	$escaped_qmode        = mysql_real_escape_string($qmode);
 	
@@ -2140,6 +2254,24 @@ function history_update_hits($instance_name, $hits)
 	$hits = (int)$hits;
 	do_mysql_query("update query_history SET hits = $hits where instance_name = '$instance_name'");
 }
+
+
+/**
+ * Empties the query history - that is, total reset.
+ * 
+ * Restricted to admin users. (But held here in rather than in admin-lib 
+ * to keep history_* functions together.)
+ */
+function history_total_clear()
+{
+	global $User;
+
+	if ( ! $User->is_admin())
+		return;
+	
+	do_mysql_query("delete from query_history");
+}
+
 
 
 

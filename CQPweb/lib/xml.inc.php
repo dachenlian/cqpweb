@@ -91,7 +91,7 @@ function list_xml_all($corpus)
  * Gets a full set of database objects for xml elements/attributes, from the database;
  * returned in associative array whose keys repeat the object's "handle" element.
  */
-function get_xml_all_info($corpus)
+function get_all_xml_info($corpus)
 {
 	$corpus = mysql_real_escape_string($corpus);
 	
@@ -310,11 +310,15 @@ function change_xml_datatype($corpus, $handle, $new_datatype)
 		exiterror("Undefined metadata type specified."); 
 		/* shouldn't actually be reachable, because bad datatype constants ought never to go into the DB */ 
 	}
+	
+	/* in ANY case, we need to delete any restrictions from cache that involve this handle */
+	uncache_restrictions_by_xml($corpus, $xml_handle);
+
 	/* this is just in case of trouble in the latter half of the function. */
 	do_mysql_query("update xml_metadata set datatype = " . METADATA_TYPE_FREETEXT . " where corpus='$corpus' and handle='$handle'");
 	
-	
 	/* so, where are we now? we are changing FROM free text to something else. */
+	
 	switch($new_datatype)
 	{
 	case METADATA_TYPE_FREETEXT:
@@ -328,8 +332,11 @@ function change_xml_datatype($corpus, $handle, $new_datatype)
 	case METADATA_TYPE_UNIQUE_ID:
 		/* We have to check that the values (a) are unique, (b) are CQPweb handles. 
 		 * Unique - because that's the whole point. Handles - because text_id has this datatype. */
-		if ( ! xml_index_has_handles($corpus, $handle))
-			exiterror("The datatype of $handle cannot be changed to [unique ID], because there are non-handle values in the CWB index.");
+		$badval = '';
+// TODO use constant below rather than hardcoded length of 255 for unique IDs???????????
+		if ( ! xml_index_has_handles($corpus, $handle, 255, $badval))
+			exiterror("The datatype of $handle cannot be changed to [unique ID], because there are non-handle values in the CWB index;"
+				. " the first non-handle value found in the index is [$badval] .");
 		if ( ! xml_index_is_unique($corpus, $handle))
 			exiterror("The datatype of $handle cannot be changed to [unique ID], because there are duplicate values in the CWB index.");
 		break;
@@ -339,15 +346,18 @@ function change_xml_datatype($corpus, $handle, $new_datatype)
 		if ( ! xml_index_is_valid_date($corpus, $handle))
 			exiterror("The datatype of $handle cannot be changed to [date], because there are non-date values in the CWB index.");
 		break;
-				
+		
 	case METADATA_TYPE_CLASSIFICATION:
-		/* this is the tough one! Note that the procedures below implicitly involve TWO sweeps through the s-attribute. 
+		/* this is the tough one! Note that the procedures below implicitly involve TWO sweeps through the s-attribute.
 		 * We accept this overhead for the sake of simplicity and also because s-attributes are not actually all that big.
 		 * (plus, after the first time, the index file is likely to be in OS cache, so it should be pretty quick ... */
 		
 		/* first: check that the values are all valid category handles */
-		if ( ! xml_index_has_handles($corpus, $handle))
-			exiterror("The datatype of $handle cannot be changed to [classification], because there are non-category-handle values in the CWB index.");
+		$badval = '';
+// TODO use constant below rather than hardcoded length of 200 for catgegory handles???????
+		if ( ! xml_index_has_handles($corpus, $handle, 200, $badval))
+			exiterror("The datatype of $handle cannot be changed to [classification], because there are non-category-handle values in the CWB index;"
+				. " the first non-handle value found in the index is [$badval] .");
 		
 		/* so we can safely build a record for the categories of this classification */
 		setup_xml_classification_categories($corpus, $handle);
@@ -416,19 +426,31 @@ function setup_xml_classification_categories($corpus, $handle)
  * Returns true if the values are all handles (c-words up to 64 characters in legnth). 
  * 
  * If the attribute lacks values, or any values are not handles, returns false.
+ * 
+ * The third parameter is the length of handle that we want to test; by default, if this
+ * parameter occurs, it looks for up to 64 chars, but if a longer handle is permissible
+ * (e.g. category handles or ID codes) a different value can be passed in. But no 
+ * integer smaller than 1 or greater than 255 will be accepted.
+ * 
+ * The fourth parameter, if supplied, is set to the first bad value found in the index.
+ * 
  */
-function xml_index_has_handles($corpus, $att_handle)
+function xml_index_has_handles($corpus, $att_handle, $maxbytes = 64, &$bad_value = NULL)
 {
 	$answer = true;
+
+	$maxbytes = min(255, max(1, (int)$maxbytes));
+	$test = '|^\w{1,' . $maxbytes . '}$|';
 	
 	$source = open_xml_attribute_stream($corpus, $att_handle);
 	
 	while (false !== ($line = fgets($source)))
 	{
 		list(,,$val) = explode("\t", trim($line, "\r\n"));
-		if (! preg_match('|^\w{1,64}$|', $val))
+		if (! preg_match($test, $val))
 		{
 			$answer = false;
+			$bad_value = $val;
 			break;
 		}
 	}
@@ -478,6 +500,7 @@ function xml_index_is_unique($corpus, $att_handle)
  */
 function xml_index_is_valid_date($corpus, $att_handle)
 {
+// TODO add a bad value out parameter to this function as with the check-hande function.
 	$answer = true;
 
 	$source = open_xml_attribute_stream($corpus, $att_handle);
@@ -497,17 +520,31 @@ function xml_index_is_valid_date($corpus, $att_handle)
 }
 
 /**
- * Gets a readable stream resource to cwb-s-decode for 
- * the underlying s-attribute of the specified XML.
+ * Gets a readable stream resource to cwb-s-decode for the underlying s-attribute of the specified XML.
  * 
  * Exits with an error if opening of the stream fails.
  * 
  * The resource returned can be closed with pclose().
+ * 
+ * @param string $corpus       The corpus of the attribute to open.
+ * @param string $att_handle   Handle of the desired s-attribute.
+ * @param bool   $with_values  Defaults true. When true, cwb-s-decode is opened in "show values" mode (no -v).
+ *                             When false, the -v flag is set, and the output only includes the cpos values.
+ * @return resource            Readable pipe from the output of cwb-s-decode. 
  */ 
-function open_xml_attribute_stream($corpus, $att_handle)
+function open_xml_attribute_stream($corpus, $att_handle, $with_values = true)
 {
-	if (false === ($c = get_corpus_info($corpus)))
-		exiterror("Cannot open xml attribute stream: corpus does not exist.");
+	global $Corpus;
+	
+	/* avoid a DB query if the requested corpus is global one. */
+	if ($Corpus->specified && $Corpus->name == $corpus)
+		$c_to_request = $Corpus->cqp_name;
+	else
+	{
+		if (false === ($c = get_corpus_info($corpus)))
+			exiterror("Cannot open xml attribute stream: corpus does not exist.");
+		$c_to_request = $c->cqp_name;
+	}
 	
 	if (false === ($x = get_xml_info($corpus, $att_handle)))
 		exiterror("Cannot open xml attribute stream: specified s-attribute does not exist.");
@@ -516,12 +553,14 @@ function open_xml_attribute_stream($corpus, $att_handle)
 
 	global $Config;
 	
-	$cmd = "{$Config->path_to_cwb}cwb-s-decode -r {$Config->dir->registry} {$c->cqp_name} -S $att_handle";
+	$v_flag = ($with_values ? '' : '-v');
 	
-	if (false === ($source = popen($cmd, "r")))
+	$cmd = "{$Config->path_to_cwb}cwb-s-decode $v_flag -r \"{$Config->dir->registry}\" $c_to_request -S $att_handle";
+	
+	if (false === ($pipe = popen($cmd, "r")))
 		exiterror("Cannot open xml attribute stream: process open failed for ``$cmd'' .");
 
-	return $source;
+	return $pipe;
 }
 
 
@@ -535,10 +574,188 @@ function delete_xml_metadata_for($corpus)
 {
 	$corpus = mysql_real_escape_string($corpus);
 	
-	do_mysql_query("delete from xml_metadata where corpus = '$corpus'");
+	do_mysql_query("delete from xml_metadata        where corpus = '$corpus'");
 	do_mysql_query("delete from xml_metadata_values where corpus = '$corpus'");
 }
 
+
+
+
+
+/**
+ * Adds a new XML s-attribute (either a new element, that is a new set of ranges; or 
+ * annotated s-attribute linked to an unannotated "family", whose ranges it replicates).
+ * 
+ * @param string  $corpus       Corpus to add the new s-attribute to
+ * @param string  $handle       Handle for the s-attribute (if this is being added to a family:  it 
+ *                              should *include* the leading XML-family-handle).
+ * @param string  $att_family   Handle for the existing s-attribute representing the XML element we are yoking this to;
+ *                              if we are adding a new family, then this should be the same as $handle. 
+ * @param string  $description  Description for the attribute.
+ * @param int     $datatype     Integer constant for the datatypeof the attribute that is to be added. 
+ * @param string  $input_path   Path to the input file with the new data.
+ */
+function add_new_xml_to_corpus($corpus, $handle, $att_family, $description, $datatype, $input_path)
+{
+	global $Config;
+	
+	if (false === ($c_info = get_corpus_info($corpus)))
+		exiterror("Non-existent corpus specified!");
+	
+	if (xml_exists($handle, $corpus))
+		exiterror("S-attribute handle ''$handle'' already exists in this corpus!");
+
+	if ($att_family != $handle)
+	{
+		if (!xml_exists($att_family, $corpus))
+			exiterror("S-attribute handle ''$att_family'' does not exist in this corpus!");
+		$adding_new_family = false;
+	}
+	else
+		$adding_new_family = true;
+	
+	$description = mysql_real_escape_string($description);
+	
+	$datatype = (int)$datatype;
+	
+	if (false === ($source = fopen($input_path, 'r')))
+		exiterror("could not open specified input file");
+	
+
+	/* we will need to revise the corpus registry: so load it now. */
+	$regpath = $Config->dir->registry . DIRECTORY_SEPARATOR . $corpus;
+	$regdata = file_get_contents($regpath);
+
+	
+	if ($c_info->cwb_external)
+	{
+		/* parse the reg file to find out where the data is */
+		
+		if (preg_match('/^HOME\s+"(.*?)"\s*$/m', $regdata, $m))
+			;
+		else if (preg_match('/^HOME\s+(.*?)\s*$/m', $regdata, $m))
+			;
+		else
+			exiterror("CWB external corpus: could not find HOME directory in the registry file.");
+
+		$target_dir = trim($m[1]);
+		
+		/* is this directory writable? If not, abort */
+		if (!is_writeable($target_dir))
+			exiterror("Corpus ''$corpus'': index data directory is not writeable for CQPweb.");
+	}
+	else
+		$target_dir = $Config->dir->index . DIRECTORY_SEPARATOR . $corpus;
+
+	if (!$adding_new_family)
+		$att_stream = open_xml_attribute_stream($corpus, $att_family, false);
+
+	/* get everything ready for incremental write to cwb-s-encode */
+	$LETTERCODE = ($adding_new_family ? 'S' : 'V');
+	$cmd="{$Config->path_to_cwb}cwb-s-encode -d \"$target_dir\" -$LETTERCODE $handle ";
+	$process = popen($cmd, 'w');
+	/* let's not rely on PHP_EOL */
+	$eol = ($Config->cqpweb_running_on_windows ? "\r\n" : "\n");
+	
+	switch($datatype)
+	{
+	case METADATA_TYPE_CLASSIFICATION:
+	case METADATA_TYPE_UNIQUE_ID:
+	case METADATA_TYPE_IDLINK:
+		$annot_criterion = '\t(\w+)';
+		break;
+	default:
+		/* all other datatypes */
+		$annot_criterion = '\t(.*)';
+		break;
+		/* note: this will need adjusting for dataypes such as DATE. */
+	}
+	if ($adding_new_family)
+		$annot_criterion = '';
+	
+	$max = get_corpus_wordcount($corpus);
+	
+	$line_regex = "/^(\d+)\t(\d+)$annot_criterion$eol$/";
+	$att_stream_regex = "/^(\d+)\t(\d+)$eol$/";
+
+	$line_n = 0;
+	$abort_required = false;
+
+	while (false !== ($line = fgets($source)))
+	{
+// show_var($line);
+		++$line_n;
+		/* these checks always apply */
+		if (1 > preg_match ($line_regex, $line, $m) || (int)$m[2] <= (int)$m[1] || $max < (int)$m[2])
+		{
+// show_var($m);
+			$abort_required = true;
+			break;
+		}
+		/* this check only applies if we are adding data to a family */
+		if (!$adding_new_family)
+		{
+			/* load pair from att stream : do they match? */
+			preg_match($att_stream_regex, fgets($att_stream), $n);
+
+			if ($m[1] != $n[1] || $m[2] != $n[2])
+			{
+				$bad_cpos_match_abort_required = true;
+				break;
+			}
+		}
+		fputs($process, $line);
+	}
+	
+	fclose($source);
+	
+	pclose($process);
+	
+	if (!$adding_new_family)
+		pclose($att_stream);
+	
+	if ($abort_required || $bad_cpos_match_abort_required)
+	{
+		/* we have only created a rng file... */
+		if (is_file("$target_dir/$handle.rng"))
+			unlink("$target_dir/$handle.rng");
+		
+		exiterror(
+			( $abort_required  
+				? "Bad line in s-attribute input file (at line # $line_n), encoding aborted."
+				: "Cpos at line # $line_n do not match those in exisitng attribute ''$att_family''!"
+			));
+	}
+	
+	/* add registry line... */
+	if ($adding_new_family)
+	{
+		$new_regline = "#added by CQPweb add-XML tool{$eol}STRUCTURE $handle$eol$eol";
+		if (false !== (strpos($regdata, $encode_sig='# Yours sincerely, the Encode tool.')))
+			$regdata = str_replace($encode_sig, "$new_regline$encode_sig", $regdata);
+		else 
+			$regdata .= $new_regline;
+	}
+	else
+	{
+		$new_regline = "STRUCTURE $handle ";
+		$n_spaces = 21 - strlen($handle);
+		for ($i = 0 ; $i < $n_spaces; $i++)
+			$new_regline .= ' ';
+		$new_regline .= "# [annotations]$eol";
+		$regdata = str_replace("STRUCTURE $att_family$eol", "STRUCTURE $att_family$eol$new_regline", $regdata);
+	}
+
+	file_put_contents($regpath, $regdata);
+	
+	/* we can now log this with the system. */
+	$sql = "insert into xml_metadata 
+ 		(corpus, handle, att_family, description, datatype) 
+ 		VALUES 
+ 		('$corpus','$handle','$att_family','$description',".METADATA_TYPE_NONE.")";
+
+	do_mysql_query($sql);	
+}
 
 
 
@@ -575,25 +792,24 @@ function get_idlink_table_name($corpus, $att_handle)
 }
 
 
-// needeD? 
-// /** returns array (handle=> description) of the fields of an iflink table */
-// function list_idlink_fields($corpus, $att_handle)
-// {
-// 	$corpus = mysql_real_escape_string($corpus);
-// 	$att_handle = mysql_real_escape_string($att_handle);
+/** returns array (handle=> description) of the fields of an idlink table */
+function list_idlink_fields($corpus, $att_handle)
+{
+	$corpus = mysql_real_escape_string($corpus);
+	$att_handle = mysql_real_escape_string($att_handle);
 	
-// 	$result = do_mysql_query("select handle, description from idlink_fields where corpus='$corpus' and att_handle = '$att_handle'");
+	$result = do_mysql_query("select handle, description from idlink_fields where corpus='$corpus' and att_handle = '$att_handle'");
 	
-// 	$list = array();
+	$list = array();
 	
-// 	while (false !== ($o = mysql_fetch_object($result)))
-// 		$list[$o->handle] = $o->description;
+	while (false !== ($o = mysql_fetch_object($result)))
+		$list[$o->handle] = $o->description;
 	
-// 	return $list;
-// }
+	return $list;
+}
 
 /** returns array of database objects for fields of an idlink table (handle is key) */
-function get_all_idlink_info($corpus, $att_handle)
+function get_all_idlink_field_info($corpus, $att_handle)
 {
 	$corpus = mysql_real_escape_string($corpus);
 	$att_handle = mysql_real_escape_string($att_handle);
@@ -709,6 +925,10 @@ function check_idlink_field_words($corpus, $att, $field)
 	if (false === ($bad_ids = check_idlink_get_bad_ids($corpus, $att, $field)))
 		return;
 	
+	$corpus = mysql_real_escape_string($corpus);
+	$att = mysql_real_escape_string($att);
+	$table = get_idlink_table_name($corpus, $att);
+	
 	/* database revert to zero text metadata prior to abort */
 	do_mysql_query("drop table if exists `$table`");
 	do_mysql_query("delete from idlink_fields where corpus = '$corpus'");
@@ -801,7 +1021,6 @@ function create_idlink_table_from_file($corpus, $att, $file, $fields)
 		{
 		case METADATA_TYPE_CLASSIFICATION:
 			/* we need to scan this field for values to add to the values table! */
-// 			$classification_scan_statements[$field['handle']] = "select distinct({$field['handle']}) from `$tablename`";
 			$classification_scan_statements[$field['handle']]
 				= "select `{$field['handle']}` as handle, count(*) as n_items, sum(n_tokens) as n_tokens from `$tablename` group by handle";
 			break;
@@ -898,6 +1117,9 @@ function create_idlink_table_from_file($corpus, $att, $file, $fields)
 
 /**
  * Delete an idlink table and associated info in the idlink_* tables.
+ * 
+ * Note that this DOESN'T handle the clearing out of the restriction-cache.
+ * Those functions must be called separately...
  *  
  * @param string $corpus  Corpus to which the idlinked attribute belongs.
  * @param string $att     S-attribute handle. Must be of type IDLINK.
@@ -915,6 +1137,57 @@ function delete_xml_idlink($corpus, $att)
 }
 
 
+/**
+ * Add a new field to the metadata for an idlink-type XML attribute.
+ * 
+ * @param string $corpus       The corpus we are working in.
+ * @param string $att_handle   Handle of the IDLINK-type XML attribute to work on.
+ * @param string $handle       Handle of the column to add.
+ * @param string $description  Description of the column to add.
+ * @param int    $datatype     Datatype constant for the new column.
+ * @param string $input_path   Path to the input file: se notes on add_field_to_metadata_table().
+ */
+function add_idlink_field($corpus, $att_handle, $handle, $description, $datatype, $input_path)
+{
+	/*
+	 * NB, this cannot be the same as add_text_metadata_field(), because we assume that text 
+	 * category frequencies cannot immediately be setup (because text frequencies aren't known yet);
+	 * whereas we assume that idlink frequencies are already known, so we create the value entries,
+	 * and add the numbers, in one fell swoop.
+	 */
+	$datatype = (metadata_valid_datatype($datatype) ? (int) $datatype : METADATA_TYPE_FREETEXT);
+	
+	if (array_key_exists($handle, list_idlink_fields($corpus, $att_handle)))
+		exiterror("Cannot add metadata field $handle because a field by that name already exists.");
+		
+	$table = get_idlink_table_name($corpus, $att_handle);
+	add_field_to_metadata_table($table, $handle, $datatype, $input_path);
+	
+	/* update the idlink_fields list */
+	$corpus = cqpweb_handle_enforce($corpus);
+	$att_handle = cqpweb_handle_enforce($att_handle);
+	$handle = cqpweb_handle_enforce($handle);
+	$description = mysql_real_escape_string($description);
+
+	do_mysql_query("insert into idlink_fields 
+		(corpus, att_handle, handle, description, datatype) 
+			VALUES
+		('$corpus','$att_handle', '$handle','$description', $datatype)");
+
+	/* and, if it is a classification, scan for values and category sizes */
+	if (METADATA_TYPE_CLASSIFICATION == $datatype)
+	{
+		$result = do_mysql_query("select `$handle` as c_handle, count(*) as n_items, sum(n_tokens) as n_tokens from `$table` group by c_handle");
+
+		while (false !== ($o = mysql_fetch_object($result)))
+			do_mysql_query("insert into idlink_values 
+					(corpus,    att_handle,    field_handle, handle,         category_n_items, category_n_tokens)
+					values
+					('$corpus', '$att_handle', '$handle',    '{$o->c_handle}', {$o->n_items},    {$o->n_tokens})"
+				);
+	}
+}
+
 
 
 
@@ -929,331 +1202,404 @@ function delete_xml_idlink($corpus, $att)
  * XML VISUALISATION FUNCTION LIBRARY
  * ==================================
  */
-
-
-
-/** "element" must be specified with either the '~start' or '~end' suffixes. */
-function xml_visualisation_delete($corpus, $element, $cond_attribute, $cond_regex)
+/**
+ * 
+ * @param  mixed $template_status  If set to true or false, the funciton returnsa only template-flagged
+ *                                 or non-template-flagged visualisations (respectively). If omitted or set
+ *                                 to NULL, all visualsiations of either tyoe are returned.
+ * @return array 
+ */
+function get_global_xml_visualisations($template_status = NULL)
 {
-	do_mysql_query("delete from xml_visualisations "
-		. xml_visualisation_primary_key_whereclause($corpus, $element, $cond_attribute, $cond_regex));
+	$list = array();
+	
+	$sql = "select * from xml_visualisations";
+	
+	if (!is_null($template_status))
+		$sql .= ' where is_template = ' . ($template_status ? '1' : '0');
+	
+	$sql .= " order by corpus";
+	
+	$result = do_mysql_query($sql);
+
+	while (false !== ($o = mysql_fetch_object($result)))
+		$list[] = $o;
+	
+	return $list; 
 }
+
+/**
+ * Get a collection of database objects for the specified corpus' XML Viz table entries. 
+ * 
+ * Limiting boolean parameters: For a complete set, pass TRUE TRUE TRUE. 
+ * For use in concordance TRUE FALSE.
+ * For use in context FALSE TRUE. 
+ * 
+ * @param string $corpus                  The corpus whose visualsiations we want.
+ * @param bool   $get_used_in_conc        If true, will include visualsiations activated for concordance.
+ * @param bool   $get_used_in_context     If true, will include visualisations activated for extended context.
+ * @param bool   $get_currently_unused    If true, will include deactivated visualisations.  
+ * @return array                          Flat array of database objects. Keys represent retrieval sequence only.
+ */
+function get_all_xml_visualisations($corpus, $get_used_in_conc, $get_used_in_context, $get_used_in_download, $get_currently_unused = false)
+{
+	$list = array();
+	
+	$corpus = mysql_real_escape_string($corpus);
+	
+	$sql = "select * from xml_visualisations where corpus = '$corpus'";
+	
+	if ( $get_used_in_conc && $get_used_in_context && $get_used_in_download && $get_currently_unused )
+		; /* add no further conditions, we just want the lot. */
+	else
+	{
+		$conditions = array();
+
+		if ($get_used_in_conc)
+			$conditions[] = ' (in_concordance = 1) ';
+		if ($get_used_in_context)
+			$conditions[] = ' (in_context = 1) ';
+		if ($get_used_in_download)
+			$conditions[] = ' (in_download = 1) ';
+		if ($get_currently_unused)
+			$conditions[] = ' (in_concordance = 0 and in_context = 0 and in_download = 0) ';
+		
+		if (0 < count($conditions))
+			$sql .= ' and (' . implode(' OR ', $conditions) . ' ) '; 
+	}
+	$result = do_mysql_query($sql);
+	
+	while (false !== ($o = mysql_fetch_object($result)))
+		$list[] = $o;
+	
+	return $list; 
+}
+
+/** 
+ * Prepares an index of XML Viz info for use by the render function.
+ * 
+ * We need the index because otherwise we have to cycle through the whole viz list
+ * for EVERY SINGLE bit of XML in the output that needs rendering.
+ * 
+ * @see apply_xml_visualisations
+ * @param array $list              Input: flat array with meaningless keys.
+ * @return array                   Hash of hashes. Should be treated as opaque.
+ */
+function index_xml_visualisation_list($list)
+{
+	$index = array();
+	
+	foreach($list as $viz)
+	{
+		list($tag, $other) = explode('~', $viz->element);
+		
+		if (! isset($index[$tag]))
+			$index[$tag] = array('start'=>array('?'=> array('check' => function () {return true;}, 'html' => '')), 'end'=>'');
+		/* we create "empty" visualisations for both, before adding what we have found here */
+		
+		if ($other == 'end')
+			$index[$tag]['end'] = $viz->html;
+		else
+		{
+			/* no condiiton: the key is a single letter (will not clash cos invalid regex) */
+			if (empty($viz->conditional_on))
+				$index[$tag]['start']['?']['html'] = $viz->html;
+			else
+			{
+				$r = $viz->conditional_on;
+				$f = function ($s) use ($r) { return (bool) preg_match("/$r/", $s); };
+				/* NOTE FOR THE FUTURE: the line above can be made to depend on the datatype of the s-attribute, 
+				 * so that we can have things in the closure other than a regex check for other datatypes. */
+				$index[$tag]['start'][$r] = array('check' => $f, 'html' => $viz->html);
+			}
+		}
+	}
+	/* we now have our list, but we want to sort it. */
+	ksort($index);
+	foreach($index as $k => $v)
+		uksort($index[$k]['start'], 
+				function ($a, $b) 
+				{
+					if ('?'== $a) return 1; 
+					if ('?'== $b) return -1; 
+					return strlen($b) - strlen($a);
+				}
+			);
+	/* longest regex first, '?' is always last. */
+	
+	return $index;
+}
+
+/**
+ * Rendering-engine function for XML visualisations. 
+ * 
+ * When applied to a <tag>, </tag> or <tag VAL>
+ * input string, returns an HTML block ready to send to a browser
+ * (or a text block if we're using this for conc-download).
+ * 
+ * @param  string $input            Input string from which the HTML is to be generated.
+ * @param  array  $visualisations   Array of database objects from xml_visualisations table; 
+ *                                  should have been processed into a "hash of hashes" index.
+ * @return string                   HTML/plain text output.
+ */
+function apply_xml_visualisations($input, $visualisations)
+{
+	if (empty($input))
+		return '';
+	
+	preg_match_all('~<(/|)(\w+)( (?:.*?)|)>~', $input, $outer_m, PREG_SET_ORDER);
+	
+	$render = '';
+	
+	foreach ($outer_m as $m)
+	{
+		$v = $visualisations[$m[2]];
+		
+		if('/' == $m[1])
+			/* end tag : easy peasy */
+			$render .= $v['end'];
+		else if (empty($m[3]))
+			/* unvalued start tag : does not fulfil ANY condition */
+			$render .= $v['start']['?']['html'];
+		else
+		{
+			/* by elimination, start tag which has a value; we need to check to see the condition. */
+			$val = substr($m[3], 1);
+			foreach ($v['start'] as $candidate)
+				if ($candidate['check']($val))
+					$render .= str_replace('$$$$', $val, $candidate['html']);
+		}
+	}
+
+	return $render;
+}
+
+
+/**
+ * Apply the HTML whitelist to user-submitted XML visualisation code.
+ * 
+ * @param  string $viz  A user-submitted string of visualisation data including HTML.
+ * @return string       A "safe" viz string (still needs escaping for MySQL though!)
+ */
+function xml_visualisation_process_whitelist($viz)
+{
+	/* the "preserver" characters for allowed HTML */
+	$lb = "\x12";
+	$rb = "\x13";
+	
+	/* step 1: switch allowed simple formatting codes to $lb / $rb */
+	$viz = preg_replace('/<(\/|)(b|i|u|s|sub|sup|code)>/', "$lb$1$2$rb", $viz);
+
+	/* step 2: separately switch br, which cannot be an end tag */
+	$viz = str_replace('<br>', "{$lb}br{$rb}", $viz);
+	
+	/* step 3: deal with closing tags for the complex cases */
+	$viz = preg_replace('/<\/(span|a|bdo)>/', "$lb/$1$rb", $viz);
+	/* the OPENING tags of complex cases are treated separately as different rules apply to each. */
+	
+	/* step 4: span */
+	$viz = preg_replace('/<span\s+class="([^"]+)">/', "{$lb}span class=\"$1\"$rb", $viz);
+	
+	/* step 5: a */
+	$viz = preg_replace('/<a\s+href="(https?:\/\/[^"]+)">/', "{$lb}a target=\"_blank\" href=\"$1\"$rb", $viz);
+	
+	/* step 6: bdo */
+	$viz = preg_replace('/<bdo\s+dir="(ltr|rtl)">/', "{$lb}bdo dir=\"$1\"$rb", $viz);
+	
+	/* step 7: img */
+	$viz = preg_replace('/<img\s+src="([^"]+)">/', "{$lb}img src=\"$1\"$rb", $viz);
+		
+	/* step 8: replace all remaining angle brackets with HTML entities */
+	$viz = str_replace('<', '&lt;', $viz);
+	$viz = str_replace('>', '&gt;', $viz);
+	
+	/* step 9: finally, restore angle brackets from the mask characters */
+	$viz = str_replace($lb, '<', $viz);
+	$viz = str_replace($rb, '>', $viz);
+	
+	/* all done! */
+	return $viz;
+}
+
+
+
+
+/**
+ * Creates an entry in the visualisation list.
+ * 
+ * Note it is quite possible to create exact-duplicate entries in the viz table;
+ * only the id will be different. This has no effect (since only the first such viz
+ * processed will find anything to translate).
+ * 
+ * @param string $corpus          Name of the corpus this visualisation belongs to.
+ * @param string $attribute       The s-attribute (XML) that the visualisation is to be applied to.
+ * @param bool   $is_start_tag    True if this is a template for the start tag, false if for the end tag. 
+ * @param string $conditional_on  Content of the condition to apply. Empty string for unconditional.
+ * @param string $html            The desired HTML code.
+ * @param bool   $in_concordance  True if the initial "use in concordance" setting is to be true; defaults to true.
+ * @param bool   $in_context      True if the initial "use in context" setting is to be true; defaults to true.
+ * @param bool   $in_download      True if the initial "use in download" setting is to be true; defaults to false.
+ */
+function xml_visualisation_create($corpus, $attribute, $is_start_tag, $conditional_on, $html, 
+		$in_concordance = true, $in_context = true, $in_download = false)
+{
+	/* disallow conditions in end tags (because they have no attributes) */
+	if (! $is_start_tag)
+		$conditional_on = '';
+	
+	/* make safe all db inputs: use handle enforce, where possible */
+	$corpus = cqpweb_handle_enforce($corpus);
+	$attribute = cqpweb_handle_enforce($attribute);
+	$conditional_on = mysql_real_escape_string($conditional_on);
+	
+	$element = $attribute . ($is_start_tag ? '~start' : '~end');
+	
+	$html = mysql_real_escape_string(xml_visualisation_process_whitelist($html));
+	
+	/* bools as strings for sql insert */
+	$in_concordance = ($in_concordance ? '1' : '0');
+	$in_context     = ($in_context     ? '1' : '0');
+	$in_download    = ($in_download     ? '1' : '0');
+	
+	do_mysql_query("insert into xml_visualisations
+						(corpus,    element,    conditional_on,    in_context,  in_concordance,  in_download,  html)
+							values
+						('$corpus', '$element', '$conditional_on', $in_context, $in_concordance, $in_download, '$html')"
+			);
+}
+
+
+/**
+ * Updates the HTML stored for an identified visualisation.
+ * 
+ * @param int     $viz_id    Identifier of the visualisation to update.
+ * @param string  $new_html  The new HTML code.
+ */
+function xml_visualisation_update_html($viz_id, $new_html)
+{
+	$viz_id = (int) $viz_id;
+	$new_html = mysql_real_escape_string(xml_visualisation_process_whitelist($new_html));
+	do_mysql_query("update xml_visualisations set html = '$new_html' where id = $viz_id");
+}
+
+
+/**
+ * Deletes an XML visualisation.
+ * 
+ * @param int  $id                          Numeric ID of viz to delete.
+ * @param bool $constrain_to_global_Corpus  If true, will only delete a viz associated with the active corpus. Defaults false.
+ */
+function xml_visualisation_delete($id, $constrain_to_global_Corpus = false)
+{
+	if ($constrain_to_global_Corpus)
+	{
+		global $Corpus;
+		$extra = " and corpus = '{$Corpus->name}'";
+	}
+	else
+		$extra = '';
+	
+	$id = (int) $id;
+	
+	do_mysql_query("delete from xml_visualisations where id = $id $extra");
+}
+
+
 
 /**
  * Turn on/off the use of an XML visualisation in context display.
  */
-function xml_visualisation_use_in_context($corpus, $element, $cond_attribute, $cond_regex, $new)
+function xml_visualisation_use_in_context($id, $new)
 {
-	$newval = ($new ? 1 : 0);
-	do_mysql_query("update xml_visualisations set in_context = $newval "
-		. xml_visualisation_primary_key_whereclause($corpus, $element, $cond_attribute, $cond_regex));	
+	$newval = ($new ? '1' : '0');
+	$id = (int)$id;
+	do_mysql_query("update xml_visualisations set in_context = $newval where id = $id");	
 }
 
 /**
  * Turn on/off the use of an XML visualisation in concordance display.
  */
-function xml_visualisation_use_in_concordance($corpus, $element, $cond_attribute, $cond_regex, $new)
+function xml_visualisation_use_in_concordance($id, $new)
 {
-	$newval = ($new ? 1 : 0);
-	do_mysql_query("update xml_visualisations set in_concordance = $newval "
-		. xml_visualisation_primary_key_whereclause($corpus, $element, $cond_attribute, $cond_regex));	
+	$newval = ($new ? '1' : '0');
+	$id = (int)$id;
+	do_mysql_query("update xml_visualisations set in_concordance = $newval where id = $id");	
 }
 
-/** 
- * Generate a where clause for db changes that must affect just one visualisation;
- * does all the string-checking and returns a full whereclause.
- */ 
-function xml_visualisation_primary_key_whereclause($corpus, $element, $cond_attribute, $cond_regex)
+
+/**
+ * Turn on/off the use of an XML visualisation in query downloads.
+ */
+function xml_visualisation_use_in_download($id, $new)
 {
-	$corpus = cqpweb_handle_enforce($corpus);
-	$element = mysql_real_escape_string($element);
-	list($cond_attribute, $cond_regex) = xml_visualisation_condition_enforce($cond_attribute, $cond_regex);
-	
-	return " where corpus='$corpus' 
-			and element = '$element' 
-			and cond_attribute = '$cond_attribute' 
-			and cond_regex = '$cond_regex'";
+	$newval = ($new ? '1' : '0');
+	$id = (int)$id;
+	do_mysql_query("update xml_visualisations set in_download = $newval where id = $id");	
+}
+
+
+/**
+ * Turn on/off the availability of an XML visualisation as a cross-corpus template. 
+ */
+function xml_visualisation_use_as_template($id, $new)
+{
+	$newval = ($new ? '1' : '0');
+	$id = (int)$id;
+	do_mysql_query("update xml_visualisations set is_template = $newval where id = $id");	
 }
 
 /**
- * Creates an entry in the visualisation list.
- * 
- * A previously-existing visualisation for that same tag is deleted.
- * 
- * The "code" supplied should be the input BB-code format.
- * 
- * IMPORTANT NOTE: here, $element does NOT include the "~(start|end)", whereas the other xml_vs functions
- * assume that it DOES.
+ * Creates a copy of a cross-corpus "template" XML in the specified target corpus. 
+ * @param  int    $template_id     Template to copy.
+ * @param  string $target_corpus   Corpus to copy it to.
+ * @return int                     The ID of the new template.
  */
-function xml_visualisation_create($corpus, $element, $code, $cond_attribute = '', $cond_regex = '', 
-	$is_start_tag = true, $in_concordance = true, $in_context = true)
+function xml_visualisation_import_from_template($template_id, $target_corpus)
 {
-	/* disallow conditions in end tags (because they have no attributes) */
-	if (! $is_start_tag)
-		$cond_attribute = $cond_regex = '';
+	$template_id   = (int) $template_id;
+	$target_corpus = cqpweb_handle_enforce($target_corpus);
 	
-	/* make safe all db inputs: use handle enforce, where possible */
-	$corpus = cqpweb_handle_enforce($corpus);
-	$element = cqpweb_handle_enforce($element);
-	list($cond_attribute, $cond_regex) = xml_visualisation_condition_enforce($cond_attribute, $cond_regex);
-	
-	$element_db = $element . ($is_start_tag ? '~start' : '~end');
-	
-	xml_visualisation_delete($corpus, $element_db, $cond_attribute, $cond_regex);
-	
-	$html = xml_visualisation_bb2html($code, !$is_start_tag);
-	
-	$in_concordance = ($in_concordance ? 1 : 0);
-	$in_context     = ($in_context     ? 1 : 0);
-	
-	/* what fields are used? check the html not the bbcode, so $$$*$$$ is already removed from end tags */
-	$xml_attributes = implode('~', $fields = xml_visualisation_extract_fields($html, 'xml'));
-	if ($cond_attribute != '' && !in_array($cond_attribute, $fields))
-		$xml_attributes .= "~$cond_attribute";
-	$text_metadata  = implode('~', xml_visualisation_extract_fields($html, 'text'));
+	$hash = mysql_fetch_assoc(do_mysql_query("select * from xml_visualisations where id = $template_id"));
 
+	unset($hash['id'], $hash['is_template']);
+	$hash['corpus'] = $target_corpus;
+	$fields = implode(', ', array_keys($hash));
+	/* note the following line relies on MySQL's string-to-int type juggling for convenience... */
+	$values = '\'' . implode('\', \'', $hash) . '\''; 
+	
+	do_mysql_query("insert into xml_visualisations ($fields) VALUES ($values)");
 
-	do_mysql_query("insert into xml_visualisations
-		(corpus, element, cond_attribute, cond_regex,
-			xml_attributes, text_metadata, 
-			in_context, in_concordance, bb_code, html_code)
-		values
-		('$corpus', '$element_db', '$cond_attribute', '$cond_regex', 
-			'$xml_attributes', '$text_metadata',
-			$in_context,$in_concordance, '$code', '$html')");
+	return get_mysql_insert_id();
 }
-
-/** 
- * Returns an arrya contianing its two arguments, adjusted (empty strings
- * idf there is no condition, a handle and a mysql-escaped regex otherwise) 
- */
-function xml_visualisation_condition_enforce($cond_attribute, $cond_regex)
-{
-	$cond_attribute = trim ($cond_attribute);
-	
-	if (! empty($cond_attribute))
-	{
-		$cond_attribute = cqpweb_handle_enforce($cond_attribute);
-		$cond_regex = mysql_real_escape_string($cond_regex);
-	}
-	else
-	{
-		$cond_attribute = '';
-		$cond_regex = '';
-	}
-
-	return array($cond_attribute, $cond_regex);
-}
-
-/** 
- * Returns an array of all fields used in the argument string.
- * 
- * XML-attributes are specified in the form $$$NAME$$$ .
- * 
- * Text metadata attributes are specified in the form ~~~NAME~~~ . 
- * 
- * Specify mode by having second argument be "text" or "xml".
- * 
- * If anything other than those two is specified, "xml" is assumed.
- * 
- * The special markers $$$$$$ and ~~~~~~ are not extracted.
- */
-function xml_visualisation_extract_fields($code, $type='xml')
-{
-	/* set delimiter */
-	if ($type == 'text' || $type == 'TEXT')
-		$del = '~~~';
-	else
-		$del = '\$\$\$';
-	
-	$fields = array();
-	
-	$n = preg_match_all("/$del(\w*)$del/", $code, $m, PREG_SET_ORDER);
-	
-	foreach($m as $match)
-	{
-		/* note that $$$$$$ means value of this s-attribute, whereas ~~~~~~ means the ID of the current text;
-		 * in both cases, we want to ignore it from this array, as it is not stored in the DB. */
-		if (empty($match[1]))
-			continue;
-		if ( ! in_array($match[1], $fields))
-			$fields[] = $match[1];
-	}
-	
-	return $fields;
-}
-
-
-////////////////////////////////////////////////
-// commented out pending rethink - ah 2015-09-25
-////////////////////////////////////////////////
-//
-//function xml_visualisation_bb2html($bb_code, $is_for_end_tag = false)
-//{
-//	$html = escape_html($bb_code);
-//	
-//	/* 
-//	 * OK, we have made the string safe. 
-//	 * 
-//	 * Now let's un-safe each of the BBcode sequences that we allow.
-//	 */ 
-//	
-//	/* begin with tags that are straight replacements and do not require PCRE. */
-//	static $from = NULL;
-//	static $to = NULL;
-//	if (is_null($from))
-//		initialise_visualisation_simple_bbcodes($from, $to);
-//	$html = str_ireplace($from, $to, $html);
-//	
-//	/* get rid of empty <li>s */
-//	$html = preg_replace('|<li>\s*</li>|', '', $html);
-//	
-//	/* if there are newlines, convert to just normal spaces */
-//	$html = strtr($html, "\r\n", "  ");
-//	
-//	/* table cells - in normal BBcode these are invariant, however, we allow
-//	 * [td c=num] for colspan and [td r=num] for rowspan */
-//	$func_for_table_cell_callback = function ($m)
-//	{
-//		$span = '';
-//		if (!empty($m[2]))
-//		{
-//			if (0 < preg_match('/r=\d+/', $m[2], $n))
-//				$span .= " rowspan={$n[1]}";
-//			if (0 < preg_match('/c=\d+/', $m[2], $n))
-//				$span .= " colspan={$n[1]}";
-//		}
-//		return "<t{$m[1]}$span>";
-//	};
-//	$html = preg_replace_callback('|\[t([hd])\s+([^\]]*)\]|i',  $func_for_table_cell_callback, $html );
-//	
-//	/* color opening tags: allow the "colour" alleged-misspelling (curse these US-centric HTML standards! */
-//	$html = preg_replace('|\[colou?r=(#?\w+)\]|i', '<span style="color:$1">', $html);
-//	
-//	/* size opening tags: always in px rather than pt */
-//	$html = preg_replace('|\[size=(\d+)\]|i', '<span style="font-size:$1px">', $html);
-//	
-//	/* an extension for CQPweb: create popup boxes! */
-//	$html = preg_replace('|\[popup=([^\]]*])\]|', '<span onmouseover="return escape(\'$1\')">', $html);
-//	
-//	/* This is another CQPweb extension to BBCode, allow block and nonblock style appliers */
-//	$html = preg_replace('~\[(div|span)=(\w+)\]~i', '<$1 class="XmlViz__$2">', $html);
-//	
-//	/* img is an odd case, in theory we could do it with simple replaces, but since it collapses down to
-//	 * just one tag, let's be safe and only allow it in cases where the tags match. */
-//	$html = preg_replace('|\[img\]([^"]+?)\[/img\]|i', '<img src="$1" />', $html);
-//	/* we also have a variant form with height and width */	
-//	$html = preg_replace('|\[img=(\d+)x(\d+)\]([^"]+?)\[/img\]|i', '<img width="$1" height="$2" src="$3" />', $html);
-//	$html = preg_replace('|\[img\s+width=(\d+)\s+height=(\d+)\s*\]([^"]+?)\[/img\]|i', 
-//							'<img width="$1" height="$2" src="$3" />', $html);
-//	$html = preg_replace('|\[img\s+height=(\d+)\s+width=(\d+)\s*\]([^"]+?)\[/img\]|i', 
-//							'<img width="$2" height="$1" src="$3" />', $html);
-//	
-//	/* now links - two sorts of these */
-//	$html = preg_replace('|\[url\]([^"]+?)\[/url\]|i', '<a target="_blank" href="$1">$1</a>', $html);
-//	$html = preg_replace('|\[url=([^"]+?)\](.+?)\[/url\]|i', '<a target="_blank" href="$1">$2</a>', $html);
-//	
-//	
-//	if ($is_for_end_tag)
-//	{
-//		/* remove all attribute values: end-tags don't have them in CQP concordances. */
-//		$html = preg_replace('/$$$\w*$$$/', '', $html);
-//	}
-//	
-//	return $html;
-//}
-//
-//
-///** Initialise arrays of simple bbcode translations */
-//function initialise_visualisation_simple_bbcodes(&$from, &$to)
-//{
-//	/* emboldened text: we use <strong>;  not <b> */
-//	$from[0] = '[b]';			$to[0] =  '<strong>'; 
-//	$from[1] = '[/b]';			$to[1] =  '</strong>'; 
-//	
-//	/* italic text: we use <em>;  not <i> */
-//	$from[2] = '[i]';			$to[2] =  '<em>'; 
-//	$from[3] = '[/i]';			$to[3] =  '</em>'; 
-//	
-//	/* underlined text: we use <u>;  not <ins> or anything silly. */
-//	$from[4] = '[u]';			$to[4] =  '<u>'; 	
-//	$from[5] = '[/u]';			$to[5] =  '</u>'; 
-//	
-//	/* struckthrough text: just use <s> */
-//	$from[6] = '[s]';			$to[6] =  '<s>'; 			
-//	$from[7] = '[/s]';			$to[7] =  '</s>'; 
-//	
-//	/* unnumbered list is easy enough. BUT the [*] that creates <li> makes life trickier. */
-//	$from[8] =  '[list]';		$to[8] =   '<ul><li>';
-//	$from[9] =  '[/list]';		$to[9] =   '</li></ul>';
-//	$from[10] = '[*]';			$to[10] =  '</li><li>';
-//	/* note we will need a regex to get rid of empty <li>s.  See main processing function. */
-//
-// 	/* quote is how we get at HTML blockquote. No other styling specified. */
-//	$from[11] = '[quote]';		$to[11] =  '<blockquote>';
-//	$from[12] = '[/quote]';		$to[12] =  '</blockquote>'; 
-//	
-//	/* code gives us <pre>. */
-//	$from[13] = '[code]';		$to[13] =  '<pre>'; 
-//	$from[14] = '[/code]';		$to[14] =  '</pre>';
-//	
-//	/* table main holder; td and tr are more complex */
-//	$from[15] = '[table]';		$to[15] =  '<table>'; 
-//	$from[16] = '[/table]';		$to[16] =  '</table>';
-//	$from[17] = '[tr]';			$to[17] =  '<tr>'; 
-//	$from[18] = '[/tr]';		$to[18] =  '</tr>';
-//
-//	/* close tags for elements with complicated opening tags */
-//	$from[19] = '[/td]';		$to[19] =  '</td>';
-//	$from[20] = '[/th]';		$to[20] =  '</th>';
-//	$from[21] = '[/size]';		$to[21] =  '</span>';
-//	$from[22] = '[/color]';		$to[22] =  '</span>';
-//	$from[23] = '[/colour]';	$to[23] =  '</span>';
-//	$from[24] = '[/div]';		$to[24] =  '</div>';
-//	$from[25] = '[/span]';		$to[25] =  '</span>';
-//	$from[34] = '[/popup]';		$to[34] =  '</span>';  // NOTE out of order number cos this was added later
-//	
-//	/* alternative bbcode list styles - let's support as many as possible */
-//	$from[26] = '[ul]';			$to[26] =  '<ul><li>';
-//	$from[27] = '[/ul]';		$to[27] =  '</li></ul>';
-//	$from[28] = '[ol]';			$to[28] =  '<ol><li>';
-//	$from[29] = '[/ol]';		$to[29] =  '</li></ol>';
-//	
-//	/* something not needed in most cases, but throw it in anyway.... */
-//	$from[30] = '[centre]';		$to[30] =  '<center>';
-//	$from[31] = '[center]';		$to[31] =  '<center>';
-//	$from[32] = '[/centre]';	$to[32] =  '</center>';
-//	$from[33] = '[/center]';	$to[33] =  '</center>';
-//
-///* next number: 35 */
-//}
-
 
 /** 
  * Gets an array of s-attributes that need to be shown in the CQP concordance line
  * in order for visualisation to work. 
+ * 
+ * @param  string $where  Either "conc" or "context" or "download" 
+ *                        (to get the right set of XML attributes for the active viz).
+ * @return array          Array of s-attributes: flat array of strings containing the s-attributes.
  */
-function xml_visualisation_s_atts_to_show()
+function xml_visualisation_s_atts_to_show($where)
 {
 	global $Corpus;
 
 	$atts = array();
-
-	$result = do_mysql_query("select element, xml_attributes from xml_visualisations where corpus='{$Corpus->name}'");
+	
+	switch($where)
+	{
+	case 'conc':     $field = 'in_concordance'; break;
+	case 'context':  $field = 'in_context';     break;
+	case 'download': $field = 'in_download';    break;
+	}
+	
+	$result = do_mysql_query("select element from xml_visualisations where corpus='{$Corpus->name}' and $field = 1");
 
 	while (false !== ($r = mysql_fetch_object($result)))
 	{
 		list($r->element) = explode('~', $r->element); 
 		if ( ! in_array($r->element, $atts) )
 			$atts[] = $r->element;
-		if ($r->xml_attributes == '')
-			continue;
-		foreach (explode('~', $r->xml_attributes) as $a)
-		{
-			$s_a = "{$r->element}_$a";
-			if ( ! in_array($s_a, $atts) )
-				$atts[] = $s_a;
-		}
 	}
 	
 	return $atts;

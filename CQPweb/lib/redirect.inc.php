@@ -27,7 +27,7 @@
  * @file
  * 
  * This script processes the different commands that can be issued by the 
- * "redirect box" --  little dropdown that contains commands on various pages.
+ * "redirect box" -- a little dropdown that contains commands on various pages.
  * 
  * Because this dropdown goes to multiple pages, the redurect script is needed
  * to work out what page we're going to (and sometimes, to provide a filter
@@ -69,16 +69,34 @@ if ( ! isset($_GET['redirect']))
 	exit();
 }
 else
-{	
+{
 	$redirect_script_redirector = $_GET['redirect'];
 	unset ($_GET['redirect']);
 	
-	/* allow for custom plugins in concordance.php, whose redirect could be ANYTHING */
+	/*
+	 * ======================
+	 * SPECIALIST REDIRECTORS (where more than one input needs to go to the same switch-case)
+	 * ======================
+	 */
+	
+	/* (1) allow for custom plugins in concordance.php, whose redirect could be ANYTHING */
 	if (substr($redirect_script_redirector, 0, 11) == 'CustomPost:')
 	{
 		$custom_pp_parameter = $redirect_script_redirector;
 		$redirect_script_redirector = 'customPostprocess';
 	}
+	
+	/* (2) allow for an XML attribute handle to be added to distributionDownload. */
+	if (substr($redirect_script_redirector, 0, 20) == 'distributionDownload')
+	{
+		$_GET['redirect'] = $redirect_script_redirector;
+		$redirect_script_redirector = 'distributionDownload';
+	}
+// 		list($redirect_script_redirector, $distribution_download_xml_handle) = explode('~', $redirect_script_redirector);
+// 	else
+// 		$distribution_download_xml_handle = '--text';
+	
+	
 	
 	
 	
@@ -88,9 +106,6 @@ else
 	/* from more than one control box */
 	
 	case 'newQuery':
-// 		foreach ($_GET as $k=>&$g)
-// 			unset($_GET[$k]);
-// 		require("../lib/queryhome.inc.php");
 		header("Location: index.php");
 		break;
 	
@@ -178,11 +193,13 @@ else
 		break;
 	
 	case 'refreshDistribution':
-		require("../lib/distribution.inc.php");
-		break;
+// 		require("../lib/distribution.inc.php");
+// 		break;
 	
 	case 'distributionDownload':
-		$_GET['tableDownloadMode'] = 1;
+// 		$_GET['tableDownloadMode'] = 1;
+// 		$_GET['distXml'] = $distribution_download_xml_handle;
+// 		unset($distribution_download_xml_handle);
 		require("../lib/distribution.inc.php");
 		break;
 		
@@ -298,7 +315,7 @@ else
 		/* nb no sanitisation of qname needed, will be done by the Concordance program */
 		$_GET['program'] = 'sort';
 		$_GET['newPostP'] = 'sort';
-		/* this  cvhecks the above...  */
+		/* this  checks the above...  */
 		if (empty($_GET['newPostP_sortPosition']))
 			$_GET['newPostP_sortPosition'] = 0;
 		$_GET['newPostP_sortThinTag'] = '';
@@ -334,11 +351,7 @@ else
 
 	/* from corpus settings page */
 	
-	case 'adminResetCWBDir':
-		$_GET['args'] = $_GET['arg1'] . $_GET['arg2'];
-		require('../lib/execute.inc.php');
-		break;
-		// I THINK the above case is now superfluous, and that the form with that option is GONE. TODO: check.
+	
 
 
 
@@ -381,7 +394,7 @@ else
 	/* special case */
 	
 	case 'comingSoon':
-		require("../lib/library.inc.php");
+		require("../lib/html-lib.inc.php");
 		coming_soon_page();
 		break;
 

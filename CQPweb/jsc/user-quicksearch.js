@@ -40,8 +40,8 @@ $(document).ready (function() {
 	{	
 		/* now we know we are on the user search page, set up the rest of the variables */
 		var usernames = $("#userQuicksearchData").val().split("|");
-		var results = $("#userQuicksearchResults");
-		var anchor = $("#userQuicksearchResultsAnchor");
+		var results   = $("#userQuicksearchResults");
+		var anchor    = $("#userQuicksearchResultsAnchor");
 
 		/* and create the function that monitors what the user types in the quicksearch box */
 		input.keyup( function() 
@@ -57,7 +57,15 @@ $(document).ready (function() {
 				var n = 0;
 				for (var i = 0 ; i < usernames.length && n <= 20 ; i++)
 					if ( text == usernames[i].substr(0, text.length).toLowerCase() )
-						results.append('<li><a tabindex="' + (1+(n++)) + '" href="index.php?thisF=userView&username=' + usernames[i] + '&uT=y">' + usernames[i] + '</a></li>');
+						results.append(
+								'<li><a tabindex="' 
+								+ (1+(n++)) 
+								+ '" href="index.php?thisF=userView&username=' 
+								+ usernames[i] 
+								+ '&uT=y">' 
+								+ usernames[i] 
+								+ '</a></li>'
+								);
 
 				/* set position of the ul and re-attach */
 				results.appendTo(anchor);

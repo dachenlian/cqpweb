@@ -36,6 +36,11 @@
  */
 
 
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
+
+
 require('../lib/environment.inc.php');
 
 
@@ -49,7 +54,6 @@ require('../lib/exiterror.inc.php');
 require('../lib/xml.inc.php');
 require('../lib/subcorpus.inc.php');
 require('../lib/freqtable.inc.php');
-require('../lib/cwb.inc.php');
 require('../lib/cqp.inc.php');
 
 
@@ -81,6 +85,13 @@ if (isset ($_GET['action']) && $_GET['action'] == 'Cancel')
 }
 
 
+/* 
+ * A note on two variables.
+ * 
+ * $list_of_texts is always an array of text IDs.
+ * $string_of_texts is always a space-delimited imploded string derived from, or used to derive, such an array. 
+ */
+
 
 
 switch ($this_script_mode)
@@ -98,7 +109,10 @@ case 'create_from_manual':
 	{
 		subcorpus_admin_check_name($subcorpus_name, url_absolutify('index.php?subcorpusBadName=y&' . url_printget()));
 
-		$list_of_texts = explode(' ', (trim(preg_replace('/[\s,]+/', ' ', $_GET['subcorpusListOfFiles']))));
+// TODO funciutonalise, get_lkist_and_string_of_ids()???????? note this code is duplicated below. 
+		/* delete nonword nonspace for data safety; replace comma/space for standardisation */ 
+		$string_of_texts = trim(preg_replace('/[\s,]+/', ' ', preg_replace('/[^\w\s,]/', '', $_GET['subcorpusListOfFiles'])));
+		$list_of_texts = explode(' ', $string_of_texts);
 
 		/* get a list of text names that are not real text ids */
 		$errors = check_textlist_valid($list_of_texts, $Corpus->name);
@@ -107,7 +121,7 @@ case 'create_from_manual':
 		{
 			$errstr = implode(' ', $errors);
 			set_next_absolute_location('index.php?subcorpusCreateMethod=manual&subcorpusListOfFiles='
-				. "$list_of_texts&subcorpusFunction=define_subcorpus&subcorpusNewName="
+				. "$string_of_texts&subcorpusFunction=define_subcorpus&subcorpusNewName="
 				. "$subcorpus_name&subcorpusBadTexts=$errstr&thisQ=subcorpus&uT=y");
 			break;
 		}
@@ -139,21 +153,21 @@ case 'create_from_metadata':
 	if ($_GET['action'] == 'Get list of texts') /* little trick with the button text! */
 	{
 		/* then we don't want to actually store it, just display a new form */
-		$list_of_texts_to_show_in_form = implode(' ', $restriction->get_item_list());
+		$string_of_texts_to_show_in_form = implode(' ', $restriction->get_item_list());
 		$header_cell_text = 'Viewing texts that match the following metadata restrictions: <br/>' . $restriction->print_as_prose();
 		$field_to_show = $Corpus->primary_classification_field;
 		
-		$longval_id = longvalue_store($list_of_texts_to_show_in_form . '~~~~~' . mysql_real_escape_string($header_cell_text) . '~~~~~' . $field_to_show);
+		$longval_id = longvalue_store($string_of_texts_to_show_in_form . '~~~~~' . mysql_real_escape_string($header_cell_text) . '~~~~~' . $field_to_show);
 
 		set_next_absolute_location("index.php?subcorpusFunction=list_of_files&listOfFilesLongValueId=$longval_id&thisQ=subcorpus&uT=y");
 	}
 	else
 	{
 		subcorpus_admin_check_name($subcorpus_name, 
-			url_absolutify('index.php?subcorpusBadName=y&subcorpusCreateMethod='
-				. 'metadata&subcorpusFunction=define_subcorpus&' 
-				. $restriction->url_serialise() . '&' 
-				. url_printget()));
+			url_absolutify('index.php?thisQ=subcorpus&subcorpusFunction=define_subcorpus&subcorpusCreateMethod=metadata&subcorpusNewName='
+				. urlencode(escape_html($subcorpus_name)) . '&subcorpusBadName=y&' . $restriction->url_serialise() . '&uT=y')
+				);
+// 				. url_printget(array(array('del', ''), array('t', '')))));// got rid of here, cos fragiler
 
 		$sc = Subcorpus::create($subcorpus_name, $Corpus->name, $User->username);
 		$sc->populate_from_restriction($restriction);
@@ -212,14 +226,14 @@ case 'create_from_metadata_scan':
 	
 	$result = do_mysql_query("select text_id from text_metadata_for_{$Corpus->name} where $field like '$value'");
 	
-	$list_of_texts_to_show_in_form = '';
+	$string_of_texts_to_show_in_form = '';
 	
 	while ( false !== ($r = mysql_fetch_row($result)) )
-		$list_of_texts_to_show_in_form .= ' ' . $r[0];
+		$string_of_texts_to_show_in_form .= ' ' . $r[0];
 		
-	$list_of_texts_to_show_in_form = trim($list_of_texts_to_show_in_form);
+	$string_of_texts_to_show_in_form = trim($string_of_texts_to_show_in_form);
 
-	$longval_id = longvalue_store($list_of_texts_to_show_in_form . '~~~~~' . mysql_real_escape_string($header_cell_text) . '~~~~~' . $field_to_show);
+	$longval_id = longvalue_store($string_of_texts_to_show_in_form . '~~~~~' . mysql_real_escape_string($header_cell_text) . '~~~~~' . $field_to_show);
 	
 	set_next_absolute_location("index.php?subcorpusFunction=list_of_files&listOfFilesLongValueId=$longval_id&thisQ=subcorpus&uT=y");
 	break;
@@ -227,7 +241,7 @@ case 'create_from_metadata_scan':
 
 
 
-case 'create_from_query':
+case 'create_from_query_texts':
 
 	if (!isset($_GET['savedQueryToScan']))
 	{
@@ -266,17 +280,47 @@ case 'create_from_query':
 		foreach($grouplist as &$g)
 			list($texts[]) = explode("\t", $g);
 	
-		$list_of_texts_to_show_in_form = implode(' ', $texts);
+		$string_of_texts_to_show_in_form = implode(' ', $texts);
 	
-		$longval_id = longvalue_store($list_of_texts_to_show_in_form . '~~~~~' . mysql_real_escape_string($header_cell_text) . '~~~~~' . $field_to_show);
+		$longval_id = longvalue_store($string_of_texts_to_show_in_form . '~~~~~' . mysql_real_escape_string($header_cell_text) . '~~~~~' . $field_to_show);
 	
 		set_next_absolute_location("index.php?subcorpusFunction=list_of_files&listOfFilesLongValueId=$longval_id&thisQ=subcorpus&uT=y");
 	}
 	break;
-
-	
 	
 
+
+case 'create_from_query_regions':
+
+	if (!isset($_GET['savedQueryToScan']))
+	{
+		/* effectively do not allow a submission (but sans error message) if no query specified */
+		set_next_absolute_location(
+			"index.php?subcorpusCreateMethod=query_regions&subcorpusFunction=define_subcorpus&subcorpusNewName=$subcorpus_name&thisQ=subcorpus&uT=y");
+		break;
+	}
+	$qname = mysql_real_escape_string($_GET['savedQueryToScan']);
+	
+	if (!isset($_GET['xmlAtt']))
+		exiterror("No XML attribute was specified.");
+	if (!xml_exists($_GET['xmlAtt'], $Corpus->name))
+		exiterror("Nonexistant XML attribute specified.");
+	
+	subcorpus_admin_check_name($subcorpus_name, 
+		url_absolutify('index.php?subcorpusBadName=y&subcorpusCreateMethod='
+			. 'query_regions&subcorpusFunction=define_subcorpus&' 
+			. url_printget()));
+
+	$sc = Subcorpus::create($subcorpus_name, $Corpus->name, $User->username);
+	$sc->populate_from_query_xml($qname, $_GET['xmlAtt']);
+	$sc->save();
+
+	set_next_absolute_location('index.php?thisQ=subcorpus&uT=y');
+	
+	break;
+	
+
+	
 case 'create_inverted':
 
 	if (empty($_GET['subcorpusToInvert']))
@@ -290,7 +334,7 @@ case 'create_inverted':
 	$sc = Subcorpus::create($subcorpus_name, $Corpus->name, $User->username);
 	if (! $sc->populate_from_inverting($_GET['subcorpusToInvert']))
 		exiterror("You can (at present) only use the invert-subcorpus function with a subcorpus made up of a set of texts. ");
-		// TODO see the SC::populate_from_invert comments for why; this might change later. 
+		// TODO see the SC::populate_from_invert comments for why; this MUST change later, we want to be able to invert ANY kind of Sc. 
 	$sc->save();
 	
 	set_next_absolute_location('index.php?thisQ=subcorpus&uT=y');
@@ -304,6 +348,8 @@ case 'create_text_id':
 	
 	if (count($text_list) > 100)
 		exiterror('This corpus contains more than 100 texts, so you cannot use the one-subcorpus-per-text function!');
+	if (count($text_list) == 1)
+		exiterror('This corpus contains only one text, so you cannot use the one-subcorpus-per-text function!');
 	
 	foreach($text_list as $id)
 	{
@@ -334,7 +380,7 @@ case 'copy':
 		exiterror('The subcorpus you want to copy does not seem to exist!');
 	
 	if ($subcorpus_name == $copy_src->name)
-		exiterror("It's not possible to create a copy of a subcorpus with the sam,e name as the original ({$copy_src->name}).");
+		exiterror("It's not possible to create a copy of a subcorpus with the same name as the original ({$copy_src->name}).");
 
 	/* What this call does: clone the subcorpus, then flag as unsaved to give it a new ID, then save. */
 	Subcorpus::duplicate($copy_src, $subcorpus_name);
@@ -409,17 +455,19 @@ case 'add_texts':
 	}
 	else
 	{
-		$list_of_texts = explode(' ', trim(preg_replace('/[\s,]+/', ' ', $_GET['subcorpusListOfFiles'])));
+		/* delete nonword nonspace for data safety; replace comma/space for standardisation */ 
+		$string_of_texts = trim(preg_replace('/[\s,]+/', ' ', preg_replace('/[^\w\s,]/', '', $_GET['subcorpusListOfFiles'])));
+		$list_of_texts = explode(' ', $string_of_texts);
 		
 		/* get a list of text names that are not real text ids */
 		$errors = check_textlist_valid($list_of_texts, $Corpus->name);
 
 		if (!empty($errors))
 		{
-			$errstr = implode(' ', $errors);
-			set_next_absolute_location('index.php?thisQ=subcorpus&subcorpusListOfFiles='
-				. "$list_of_texts&subcorpusFunction=add_texts_to_subcorpus&subcorpusToAddTo="
-				. "$subcorpus_to&subcorpusBadTexts=$errstr&uT=y");
+			$errstr = urlencode(implode(' ', $errors));
+			set_next_absolute_location("index.php?thisQ=subcorpus&subcorpusListOfFiles=$string_of_texts"
+				. "&subcorpusFunction=add_texts_to_subcorpus&subcorpusToAddTo=$subcorpus_to"
+				. "&subcorpusBadTexts=$errstr&uT=y");
 			break;
 		}
 		
@@ -438,13 +486,13 @@ case 'process_from_text_list':
 	{
 		/* "include all texts" was ticked */
 		/* the actual list of texts may be too long for HTTP GET, so is stored in the longvalues table */
-		$text_list_to_add = array_unique(explode(' ', preg_replace('/\W+/', ' ', longvalue_retrieve($_GET['processTextListAddAll']))));
+		$list_of_texts = array_unique(explode(' ', preg_replace('/\W+/', ' ', longvalue_retrieve($_GET['processTextListAddAll']))));
 	}
 	else
 	{
-		/* "include all" not ticked: refer to individual checkboxes. */ 
-		if (0 > preg_match_all('/aT_([^&]*)=1/', $_SERVER['QUERY_STRING'], $m, PREG_PATTERN_ORDER))
-			$text_list_to_add = array_map('cqpweb_handle_enforce', array_unique($m[1]));
+		/* "include all" not ticked: refer to individual checkboxes. */
+		if (0 < preg_match_all('/aT_([^&]*)=1/', $_SERVER['QUERY_STRING'], $m, PREG_PATTERN_ORDER))
+			$list_of_texts = array_map('cqpweb_handle_enforce', array_unique($m[1]));
 		else
 			exiterror("You didn't specify any texts to add to this subcorpus! Go back and try again.");
 	}
@@ -473,7 +521,7 @@ case 'process_from_text_list':
 		$subcorpus_to = Subcorpus::create($subcorpus_name, $Corpus->name, $User->username);
 		
 		/* note we get the obj to do che3ckign for us just in case... */
-		$subcorpus_to->populate_from_list('text', 'id', $text_list_to_add);
+		$subcorpus_to->populate_from_list('text', 'id', $list_of_texts);
 		$subcorpus_to->save();
 	}
 	
@@ -496,9 +544,7 @@ case 'compile_freqtable':
 		
 	 	/* otherwise... */
 		$qs = QueryScope::new_by_unserialise("{$sc->id}");
-//show_Var($qs);
 	 	subsection_make_freqtables($qs);
-//	 	subsection_make_freqtables($sc->name);
 	}
 	
 	set_next_absolute_location('index.php?thisQ=subcorpus&uT=y');
@@ -527,7 +573,7 @@ exit();
 
 
 /**
- * Checks the subcorpus name parameter for validity: redirects to specified URL & exits if the test is failed.
+ * Checks a subcorpus name parameter for validity: redirects to specified URL & exits if the test is failed.
  * 
  * @param string $subcorpus_name
  * @param string $location_url

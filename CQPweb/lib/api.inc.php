@@ -33,7 +33,56 @@
  * 
  * This is generally as plain text (easily explode()-able or otherwise
  * manipulable within Perl or PHP).
+ * 
+ * TODO - actually we prob want json.
  */
+
+
+/////////////////////////////
+/*
+
+ALT APPROACH:
+
+
+Create an object in global space ($Api)
+
+In the $Config object setup
+
+if ($ApiCAlled)
+
+		nb for boolean check on object 0
+php > $x = new stdClass();
+php > var_dump($x);
+object(stdClass)#1 (0) {
+}
+php > if ($x) echo "1"; else echo "2"; echo PHP_EOL;
+1
+php > exit
+
+
+
+
+
+--> copy into $Config->ApiData 
+(which is false if we were not called as an API)
+
+MEANWHILE, this file just #includes the correctscript for the call.
+
+If we're in API mode, each script puts the info into $Config->ApiData
+
+which is dealt with by cqpweb_shutdown_environment.
+
+Each 
+
+
+*/
+/////////////////////////////
+
+
+
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
 
 require('../lib/environment.inc.php');
 
@@ -44,12 +93,12 @@ require('../lib/concordance-lib.inc.php');
 require('../lib/concordance-post.inc.php');
 require('../lib/ceql.inc.php');
 require('../lib/metadata.inc.php');
+require('../lib/xml.inc.php');
 require('../lib/exiterror.inc.php');
 require('../lib/cache.inc.php');
 require('../lib/subcorpus.inc.php');
 require('../lib/db.inc.php');
 require('../lib/user-lib.inc.php');
-require('../lib/cwb.inc.php');
 require('../lib/cqp.inc.php');
 
 /*
@@ -64,8 +113,12 @@ $debug_messages_textonly = true;
 
 
 if (!url_string_is_valid())
-	exiterror_bad_url();
+	exiterror_bad_url(); 
+// TODO change this to an API abort, e.g. exiterror_api_abort();
+// since there is no config object yet for us to add "API mode" to communicate to the exiterro module.
 
+// TODO no, we need to actually instgead work out whether we are using GET or POSt **HERE**/
+// so we can copy the right one below. 
 
 /*
  * This switch runs across functions available within the web-api.
@@ -79,14 +132,24 @@ if (!url_string_is_valid())
  * In some cases, just writing a simpler version of the script may be justifiable.
  */
 
+$api_function = (isset($_GET['function']) ? $_GET['function'] : 'we pass harmlessly through the switch to default');
+
+/* we need to keep a record of the GET, but at the same time, we want a clean GET we can write to. */
+$arg_copy = $_GET;
+$_GET = array('uT'=>'y');
 
 
-switch($_GET['function'])
+$ApiResponse = new stdClass();
+// for now an stdClass. In practice, we might want a class, CQPwebApiResponse ...
+// note - ApiResponse is a global object like Config, etc. so that all scripts / functions can access it. 
+
+switch($api_function)
 {
 case 'query':
 	/* run a query */
 	//return value: the query name.
-	// Allow it to be auto-saved under a specified save-name as well??
+	//     Allow it to be auto-saved under a specified save-name as well??
+	//     or better, actually, m ake that a separate function on this list. 
 	break;
 	/* endcase query */
 	
@@ -124,4 +187,9 @@ default:
 	break;
 }
 
-?>
+// at the end:L take the $response object, jsonencode; send the right headers; echo; shutdown. 
+
+// this might be best done as a func in the $ApiRespnose class: e.g. $ApiResponse->dispatch();
+// OR, we could do it as a funciton, and then register that for shutdown. send_api_response_on_shutdown();
+// HMMMMM
+

@@ -28,7 +28,7 @@
  * 
  * A file full of functions that generate handy bits of HTML.
  * 
- * ALL functions in this library *retuirn* a string rather than echoing it.
+ * MOST of the functions in this library *return* a string rather than echoing it.
  * 
  * So, the return value can be echoed (to browser), or stuffed into a variable.
  */
@@ -225,14 +225,16 @@ END;
 
 
 /** returns a 4-row uploaded file selector (radio button mode, name of inputs = 'dataFile'). */
-function print_uploaded_file_selector()
+function print_uploaded_file_selector($input_name = 'dataFile')
 {
-	// make the "include zips" parameterisable in future? 
-	// make the directory paramaterisable in future?
+	// TODO make the "include zips" parameterisable in future? 
+	// TODO make the directory paramaterisable in future?
 
 	global $Config;
 	
 	$file_list = scandir($Config->dir->upload);
+	
+	natcasesort($file_list);
 	
 	if (empty($file_list))
 		return '<tr><td class="concordgeneral" align="center" colspan="4"><p>There are no files available.</p></td></tr>';
@@ -253,7 +255,7 @@ function print_uploaded_file_selector()
 		
 				<tr>
 					<td class="concordgeneral" align="center">
-						<input type="radio" name="dataFile" value="' . urlencode($f) . '" /> 
+						<input type="radio" name="' . $input_name. '" value="' . $f . '" /> 
 					</td>
 					
 					<td class="concordgeneral" colspan="2" align="left">' . $f . '</td>
@@ -288,13 +290,14 @@ function print_uploaded_file_selector()
  * 
  * If "hello" is passed, a link to the "Hello" page appears.
  * 
- * @return  String containing the HTML page footer.
- * 
+ * @param $helplink  String with a short code for a help video to embed in the linked help page.
+ * @return string    String containing the HTML page footer.
  */
 function print_html_footer($helplink = false)
 {
 	global $User;
-
+	global $Config;
+	
 	$v = CQPWEB_VERSION;
 
 	if (!empty($helplink))
@@ -312,6 +315,8 @@ function print_html_footer($helplink = false)
 	else
 		$lognote = "You are logged in as user [{$User->username}]";
 
+	$js_path = ($Config->run_location == RUN_LOCATION_MAINHOME ? 'jsc' : '../jsc');
+
 	return <<<RETURN_ME
 
 	<hr/>
@@ -328,7 +333,7 @@ function print_html_footer($helplink = false)
 			</td>
 		</tr>
 	</table>
-	<script language="JavaScript" type="text/javascript" src="../jsc/wz_tooltip.js"></script>
+	<script language="JavaScript" type="text/javascript" src="$js_path/wz_tooltip.js"></script>
 	</body>
 </html>
 
@@ -344,7 +349,7 @@ RETURN_ME
  * which specified the title as provided, embeds a CSS link,
  * and finally imports the specified JavaScript files.
  */
-function print_html_header($title, $css_url, $js_scripts = false)
+function print_html_header($title, $css_url, $js_scripts = false, $extra_css = false)
 {
 	global $Config;
 	global $User;
@@ -364,6 +369,11 @@ function print_html_header($title, $css_url, $js_scripts = false)
 	
 	if (!empty($css_url))
 		$s .= "\t<link rel=\"stylesheet\" type=\"text/css\" href=\"$css_url\" >\n";
+	
+	/* Extra CSS files, if supplied, add additional style3s for whatever reason. They do not get overridden. */
+	if (!empty($extra_css))
+		foreach($extra_css as $extra_url)
+			$s .= "\t<link rel=\"stylesheet\" type=\"text/css\" href=\"$extra_url\" >\n";
 
 	$js_path = ($Config->run_location == RUN_LOCATION_MAINHOME ? 'jsc' : '../jsc');
 
@@ -480,5 +490,149 @@ function print_mysql_result_dump($result)
 	$table .= "</table>\n\n";	
 	return $table;
 }
+
+
+
+
+/**
+ * Print out the system messages in HTML, including links to delete them. No return value.
+ */
+function display_system_messages()
+{
+	global $User;
+	global $Config;
+	global $Corpus;
+	
+	/* weeeeeelll, this is unfortunately complex! */
+	switch ($Config->run_location)
+	{
+	case RUN_LOCATION_ADM:
+		$execute_path = 'index.php?admFunction=execute&function=delete_system_message';
+		$after_path = urlencode("index.php?thisF=systemMessages&uT=y");
+		$rel_add = '../';
+		break;
+	case RUN_LOCATION_USR:
+		$execute_path = '../adm/index.php?admFunction=execute&function=delete_system_message';
+		$after_path = urlencode("../usr/");
+		$rel_add = '../';
+		break;
+	case RUN_LOCATION_MAINHOME:
+		$execute_path = 'adm/index.php?admFunction=execute&function=delete_system_message';
+		$after_path = urlencode("../");
+		$rel_add = '';
+		break;
+	case RUN_LOCATION_CORPUS:
+		/* we are in a corpus */
+		$execute_path = 'execute.php?function=delete_system_message';
+		$after_path = urlencode(basename($_SERVER['SCRIPT_FILENAME']));
+		$rel_add = '../';
+		break;
+	}
+
+	$result = do_mysql_query("select * from system_messages order by timestamp desc");
+	
+	if (mysql_num_rows($result) == 0)
+		return;
+	
+	?>
+	<table class="concordtable" width="100%">
+		<tr>
+			<th colspan="<?php echo ($User->is_admin() ? 3 : 2) ; ?>" class="concordtable">
+				System messages 
+				<?php
+				if ($Config->rss_feed_available)
+				{
+					?>
+					<a href="<?php echo $rel_add;?>rss">
+						<img src="<?php echo $rel_add;?>css/img/feed-icon-14x14.png" />
+					</a> 
+					<?php	
+				}
+				?> 
+			</th>
+		</tr>
+	<?php
+	
+	
+	while ( ($r = mysql_fetch_object($result)) !== false)
+	{
+		?>
+		<tr>
+			<td rowspan="2" class="concordgrey" nowrap="nowrap">
+				<?php echo substr($r->timestamp, 0, 10); ?>
+			</td>
+			<td class="concordgeneral">
+				<strong>
+					<?php echo escape_html(stripslashes($r->header)); ?>
+				</strong>
+			</td>
+		<?php
+		if ($User->is_admin())
+		{
+			echo '
+			<td rowspan="2" class="concordgeneral" nowrap="nowrap" align="center">
+				<a class="menuItem" onmouseover="return escape(\'Delete this system message\')"
+				href="'. $execute_path . '&args='
+				, $r->message_id ,
+				'&locationAfter=' , $after_path , '&uT=y">
+					[x]
+				</a>
+			</td>';
+		}
+		?>
+		</tr>
+		<tr>
+			<td class="concordgeneral">
+				<?php
+				/* Sanitise, then add br's, then restore whitelisted links ... */
+				echo preg_replace(	'|&lt;a\s+href=&quot;(.*?)&quot;\s*&gt;(.*?)&lt;/a&gt;|', 
+									'<a href="$1">$2</a>', 
+									str_replace("\n", '<br/>', escape_html(stripslashes($r->content))));
+				?>
+
+			</td>
+		</tr>			
+		<?php
+	}
+	echo '</table>';
+}
+
+
+
+
+
+function coming_soon_page()
+{
+	global $Config;
+	echo print_html_header('unfinished function!', $Config->css_path);
+	coming_soon_finish_page();
+}
+
+
+function coming_soon_finish_page()
+{
+	?>
+	<table width="100%" class="concordtable">
+		<tr>
+			<th class="concordtable">Unfinished function!</th>
+		</tr>
+		<tr>
+			<td class="concordgeneral">
+				&nbsp;<br/>
+				<b>We are sorry, but that part of CQPweb has not been built yet.</b>
+				<br/>&nbsp;
+			</td>
+		</tr>
+	</table>
+	
+	</body>
+	</html>
+	<?php
+}
+
+
+
+
+
 
 

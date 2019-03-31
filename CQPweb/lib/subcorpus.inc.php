@@ -21,7 +21,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/*
+/**
  * @file
  * 
  * QUERY SCOPE, RESTRICTION, AND SUBCORPUS: AN EXPLANATION OF HOW IT WORKS
@@ -246,7 +246,7 @@
  * save-names are restricted to ^\w+$. 
  * 
  * The Last Restrictions does not have a cpos file (as it is never directly used for a query - when
- * it is reloaded, it is the copied-out restirction, not the actual subcorpus, that gets used).
+ * it is reloaded, it is the copied-out restriction, not the actual subcorpus, that gets used).
  * 
  * Since it would never need a cpos file for primary data (it always comes from a Restricted Query), 
  * this means everything should Just Work when the normal Subcorpus copy-mechanism is used. 
@@ -525,7 +525,13 @@
  */
 
 /**
- * This class represents a Query Scope. It contains the string serialisation, plus 
+ * This class represents a Query Scope: a defined section of the corpus (possibly the whole corpus)
+ * within which a query may be run (or, perhaps, has already been run).
+ * 
+ * It contains the string serialisation, plus (where appropriate)
+ * de-serialised objects for a Subcorpus or Restriction; plus a small number of other variables.
+ * Most methods pass-through to whichever inner object it possesses, thus allowing user-code
+ * to deal identically with a Subcorpus-based Scope as with a Restriction-based Scope.
  */
 class QueryScope
 {
@@ -541,7 +547,7 @@ class QueryScope
 	 * The special QueryScope serialisation for the Query History table that indicates that the Scope
 	 * of the query was a subcorpus that has subsequently been deleted.
 	 * 
-	 * It's a public static var rather than a consonant for your ease of embedding. 
+	 * It's a public static var rather than a constant for your ease of embedding. 
 	 * Because I'm just a nice person that way. You can thank me later.
 	 */
 	public static $DELETED_SUBCORPUS = "\xc3\x90";
@@ -573,7 +579,7 @@ class QueryScope
 	 * 
 	 * @param string $url_query   The input: post-? query string from a URL (or the full URL). 
 	 * @param bool $scrub_GET     If true, the $_GET superglobal and $_SERVER[QUERY_STRING] will have
-	 *                            the fields used by this function removed. Fasle by default, normally 
+	 *                            the fields used by this function removed. False by default, normally 
 	 *                            set to true if the first paramter is $_SERVER[QUERY_STRING]. 
 	 * @return QueryScope         The new object.
 	 */
@@ -618,6 +624,14 @@ class QueryScope
 
  		$url_query = urldecode($url_query);
 
+ 		/* we can scrub get now,  since we have the URL in a safe local variable.
+ 		 * that allows us to return mid-function since there is no cleanup at the end. */
+		if ($scrub_GET)
+		{
+			clear_http_parameter('t');
+			clear_http_parameter('del');
+		}
+ 		
 		/* Now, check for restrictions and subcorpus statements. 
 		 * 
 		 * Note that the specification of a subcorpus trumps the specification of restrictions
@@ -635,7 +649,8 @@ class QueryScope
 			/* using these global would normally be dicey, but the very nature of
 			 * "last restriction" is that it is mutable across corpus/user combos. */ 
 		
-			$sql = "SELECT restrictions from saved_subcorpora
+//			$sql = "SELECT restrictions from saved_subcorpora
+			$sql = "SELECT content from saved_subcorpora
 				WHERE name = '--last_restrictions'
 				AND corpus = '{$Corpus->name}'
 				AND user = '{$User->username}'";
@@ -671,12 +686,6 @@ class QueryScope
 			else
 				$this->type = self::TYPE_RESTRICTION;
 		}
-		
-		if ($scrub_GET)
-		{
-			clear_http_parameter('t');
-			clear_http_parameter('del');
-		}
 	}
 
 	
@@ -708,6 +717,7 @@ class QueryScope
 			/* ANYTHING ELSE: this Scope refers to a Restriction */
 			$this->type = self::TYPE_RESTRICTION;
 			$this->restriction = Restriction::new_by_unserialise($this->serialised);
+//show_var($this->restriction);
 		}
 	}
 	
@@ -742,9 +752,9 @@ class QueryScope
 	
 	/**
 	 * Returns a description of the scope suitable for printing in a solution heading;
-	 * if the sciope is the whole corpus, an empty value is returned.
+	 * if the scope is the whole corpus, an empty value is returned.
 	 * 
-	 * Can be HTMl or text according to the argument. 
+	 * Return format can be HTML or text according to the argument. 
 	 */
 	public function print_description($html = true)
 	{
@@ -766,13 +776,8 @@ class QueryScope
 	public function commit_last_restriction()
 	{
 		if ($this->type == self::TYPE_RESTRICTION)
-		{
-// 			global $Corpus;
-// 			global $User;
-// 			$lr = Subcorpus::create_last_restrictions($this->restriction, $Corpus->name, $User->username);
-// 			$lr->save();
 			$this->restriction->commit_last_restriction();
-		}
+		/* else do nothing, naturally. */
 	}
 	
 	
@@ -784,7 +789,8 @@ class QueryScope
 	 * 
 	 * NB the returned object may not be unique!!!!
 	 * 
-	 * @param QueryScope $other_scope   The second scope to use for intersection.
+	 * @param  QueryScope $other_scope   The second scope to use for intersection.
+	 * @return QueryScope                Scope representing the intersection of the two scopes.
 	 */
 	public function get_intersect($other_scope)
 	{
@@ -804,8 +810,8 @@ class QueryScope
 			
 		case QueryScope::TYPE_RESTRICTION:
 			//TODO this is hugely sketchy
-			// and is repeated in the Subcorpus method above!!!
-			// which suggests that whatever it is ultiamtely should be in thwe Restrioction class.
+			// and is repeated in the Subcorpus method get_intersect_with_restriction above!!!
+			// which suggests that whatever it is ultimately should be in the Restriction class.
 			if (
 				preg_match('/^\$\^--text\|/', $set1 = $this->restriction->serialise()) 
 				&& 
@@ -818,10 +824,14 @@ class QueryScope
 				$all = array_unique(array_merge($cats1, $cats2));
 				sort($all);
 				$newinput = '$^--text|' . implode('.', $all);
+show_var($newinput);
 				return QueryScope::new_by_unserialise($newinput);
 			}
 			else 
+{
+show_var($d="we have been asked to do an intersct with a restuirction that can';t be done, returning false");
 				return false;
+}
 		}
 		
 		return false;
@@ -917,6 +927,8 @@ class QueryScope
 			return get_corpus_wordcount();
 			
 		case self::TYPE_RESTRICTION:
+// show_var($this->restriction);
+// show_var($this);
 			return $this->restriction->size_tokens();
 			
 		case self::TYPE_SUBCORPUS:
@@ -941,6 +953,26 @@ class QueryScope
 			
 		case self::TYPE_SUBCORPUS:
 			return $this->subcorpus->size_items($item);
+		}
+	}
+	
+	
+	/**
+	 * Integer value of size in distinct IDs for items. You can get the type of item as an out-parameter.
+	 */
+	public function size_ids(&$item = NULL)
+	{
+		switch ($this->type)
+		{
+		case self::TYPE_WHOLE_CORPUS:
+			$item = 'text';
+			return get_corpus_n_texts();
+			
+		case self::TYPE_RESTRICTION:
+			return $this->restriction->size_ids($item);
+			
+		case self::TYPE_SUBCORPUS:
+			return $this->subcorpus->size_ids($item);
 		}
 	}
 	
@@ -983,7 +1015,7 @@ class QueryScope
 	/**
 	 * Returns the size of the intersection between this QueryScope and a specified set of reductions.
 	 * 
-	 * For the moment, the reductions are passed in as an array of estra filters: that is, an array of "class~cat" strings
+	 * For the moment, the reductions are passed in as an array of extra filters: that is, an array of "class~cat" strings
 	 * (this is the format used internally by distribution postprocesses.) 
 	 * 
 	 * Longetrm-TODO : this will change as we have more rigorous intersection methods. 
@@ -1024,7 +1056,7 @@ class QueryScope
 				$e = preg_replace('/(\w+)~(\w+)/', '(`$1` = \'$2\')', $e);
 			$filter_where_conditions = implode(" && ", $category_filters); 
 			$where = empty($filter_where_conditions) ? '' :  "where " . $filter_where_conditions;
-			// NB the above code is repeated in Restriction && Subcropus; but this is a temp fix, so no worries. 
+// NB the above code is repeated in Restriction && Subcropus; but this is a temp fix, so no worries. 
 			
 			return mysql_fetch_row(do_mysql_query("select sum(words), count(*) from text_metadata_for_{$Corpus->name} $where")) ; 
 		}
@@ -1123,6 +1155,7 @@ class Restriction
 	 * If it consists of conditions on multiple types of item, it contains the arbitrary string '@'. */
 	private $item_type;
 	/* we may need aanother variable indicating whetehr it is text-metadata / one-xml-tag-based / mixed. */
+private $item_identifier;
 	
 	/** number of items in the Restriction. */
 	private $n_items;
@@ -1223,7 +1256,7 @@ class Restriction
 	 */
 	private function parse_serialisation()
 	{
-		/* note that this function is the definitive referfence on "what does it mean" for the various 
+		/* note that this function is the definitive reference on "what does it mean" for the various 
 		 * flags within the internal data structure $this->parsed_conditions .... */
 		
 		$parts = explode('^', $this->serialised);
@@ -1480,7 +1513,7 @@ class Restriction
 	 * 
 	 * (Note that in the overwhelming majority of cases, a Restriction will only reference one idlink per attribute...)
 	 *
-	 * The regions dientified by the IDs the where-clause extracts may be the complete Restriction, or just part of it.
+	 * The regions identified by the IDs the where-clause extracts may be the complete Restriction, or just part of it.
 	 * 
 	 * The clause has no leading "WHERE" so it's just a boolean. Additional OR clauses can be added afterwards if you wish.
 	 * 
@@ -1493,7 +1526,7 @@ class Restriction
 
 		$collected = array();
 
-		$xml_info = get_xml_all_info($this->corpus);
+		$xml_info = get_all_xml_info($this->corpus);
 		foreach ($this->parsed_conditions as $el => $cond_arr)
 		{
 			foreach ($cond_arr as $cond)
@@ -1554,6 +1587,7 @@ class Restriction
 			$sql = "SELECT count(*), sum(words) FROM text_metadata_for_{$this->corpus} WHERE {$this->stored_text_metadata_where} ";
 			$result = do_mysql_query($sql);
 			list($this->n_items, $this->n_tokens) = mysql_fetch_row($result);
+			$this->n_ids = $this->n_items;
 			
 			return;
 		}
@@ -1634,9 +1668,10 @@ class Restriction
 					$idlink_s_att_handle = $this->item_type. '_' . $field;
 					$table = get_idlink_table_name($this->corpus, $idlink_s_att_handle);
 					
-					$sql = "select sum(n_items), sum(n_tokens) from `$table` where {$this->stored_idlink_where[$idlink_s_att_handle]}";
+					$sql = "select sum(n_items), sum(n_tokens), count(__ID) from `$table` where {$this->stored_idlink_where[$idlink_s_att_handle]}";
 
-					list($this->n_items, $this->n_tokens) = mysql_fetch_row(do_mysql_query($sql));
+					list($this->n_items, $this->n_tokens, $this->n_ids) = mysql_fetch_row(do_mysql_query($sql));
+// OK, so this is the n regions, and the n tpkens. What aboutnthe n or IDs?
 					
 					return;
 				}
@@ -1676,6 +1711,7 @@ class Restriction
 
 		/* end of size-of-Restriction initialisation! */		
 		$this->hasrun_initialise_size = true;
+		
 	}
 	
 	
@@ -1690,10 +1726,14 @@ class Restriction
 		 * of a drain on RAM, and out-of-memory errors may occur. The default PHP limit will almost certainly need to be lifted
 		 * (i.e. "memory_limit" directive in php.ini).
 		 * 
-		 * Longterm TODO: think - would the cpos_collection be better cached to disk instead of RAM????
+		 * One possibility would be to hold it - even as working data - in MySQL or on disk.
+		 * 
+		 * But this smacks of reinvent-the-wheel optimisation. Better, surely, to use RAM, and let the OS worry about getting enough of it,
+		 * w/ virtual RAM getting used if necessary. 
+		 * 
 		 * (Currently we DO cache to MySQL, but only once we're done with ther Restriction. The whole thing still has to be
 		 * in RAM while we're using it. This uses up many many megabytes of RAM even with relatively small corpora -
-		 * note, for instance, that to handle utterance boundaries in a 5 MW c orpus I had to increase PHP's RAM limit
+		 * note, for instance, that to handle utterance boundaries in a 5 MW corpus I had to increase PHP's RAM limit
 		 * from the default 128 MB to 512 MB.  
 		 */
 		
@@ -1721,7 +1761,8 @@ class Restriction
 			{
 				/*  we just read off the entire s-attribute. */
 				
-				$source = get_s_decode_stream($att, false, $this->corpus);
+// 				$source = get_s_decode_stream($att, false, $this->corpus);
+				$source = open_xml_attribute_stream($this->corpus, $att, false);
 				while (false !== ($line = fgets($source)))
 				{
 					$t = explode("\t", trim($line));
@@ -1741,6 +1782,17 @@ class Restriction
 
 				$possible_matches = array();
 				$idlinks_to_interrogate = array();
+/*
+ * TODO OPTIMISATION
+ * 
+ * cnage this!! make idlinks cache their cpos_collection in the idlink table.
+ * Then, all we need to do (as with the text)
+ * is retrieve from MySQL and rewrite into a cpos_collection array, (which will need to be sorted, but we can make this quickern by adding in IDs in order of their first cpos - this will support utterance IDs because a given speaker is likely to be only in one text.)).
+--> how to test for is this set up? run sleect from idlink where blbob IS NULL --> uninitialised blob fields are always NULL as blbos can't ahve a default.
+ * This measn that restrictiosn based on conditioons on ONE idlink table do not then need to be cached.
+ * It al;so measn that if there are XML restrictions just based on idlink, these can be cross-combined
+ * with text without accessing the CWB-decode.
+ */
 				
 				foreach ($cond_array as $c)
 				{
@@ -2186,6 +2238,16 @@ class Restriction
 	}
 	
 	
+	/**
+	 * Integer value of size in no. of distinct IDs for items. You can get the item identifier attribute as an out-parameter.
+	 */
+	public function size_ids(&$item_identifier = NULL)
+	{
+		$item_identifier = $this->item_identifier;
+		return $this->n_ids;//TODO
+	}
+	
+	
 	
 	/**
 	 * Returns the size of the intersection between this Restriction and a specified set of reductions.
@@ -2196,6 +2258,16 @@ class Restriction
 	 */
 	public function size_of_classification_intersect($category_filters)
 	{
+		//TODO
+		//TODO
+		//TODO
+		//TODO
+		//TODO needs change!!!
+		//TODO
+		//TODO
+		//TODO
+		//TODO
+		//TODO
 		if ($this->item_type != 'text')
 			return false;
 		
@@ -2237,16 +2309,14 @@ class Restriction
 	/**
 	 * Gets an array of item IDs. 
 	 * 
-	 * If the Restriction is a set of whole texts, text_ids are returned (and the out params set to 'text' and 'id'
-	 * respectively). 
+	 * If the Restriction is a set of whole texts, text_ids are returned (and the out params set to 'text' and 'id' respectively). 
 	 * 
 	 * If the Restriction is a set of whole elements of some other XML element, then the first out param is set to that.
 	 * The second out param is set to "", and false is returned. 
+	 * 
 	 * (The expectation is that more complex methods will be needed to get an item list in this case: we need information relating to unique
 	 * IDs / IDLINKS and a collection of IDs there / a sequence position list / a set of arbitrary cpos pairs.)
-	 * 
-	 * [TODO TODO TODO. Monitor use of this func VERY CAREFULLY.]
-	 * 
+	 *  
 	 * Otherwise returns false (e.g. conditions on multiple elements), assigns the special string @ to the 1st param, and "" to the second.
 	 * 
 	 * @param string $item_type        Out parameter: if present, set to the item type (even when false is returned).
@@ -2255,19 +2325,6 @@ class Restriction
 	 */
 	public function get_item_list(&$item_type = NULL, &$item_identifier = NULL)
 	{
-		/* Notes on use of this  method before the rewrite: -- it was 2 places.
-		 * 
-					freqtable-cwb.inc.php:369:		$text_list = Restriction::new_by_unserialise($restriction)->get_item_list($itemcheck);
-					 ---> gets a text list for freqlist creation 
-					      (function now replaced amnd moved anyway.... see freqtable.inc)
-					 ---> OK, becasue this code is from the cwb-freq index: does not apply, cos we can't use the freq index unless it's text.
-
-					subcorpus-admin.inc.php:144:		$list_of_texts_to_show_in_form = implode(' ', $restriction->get_item_list());
-					 ---> gets an item list for subcorpus modifiying. Not needed yet......
-					 
-					 And now also used in this file by the Subcorpus object's get_item_list method.
-		 */
-		
 		if ($this->item_type == 'text')
 		{
 			/* consists of a whole number of complete texts (selected by metadata) */
@@ -2316,7 +2373,7 @@ class Restriction
 	 * 
 	 * HAVE NOT BEEN THOUGHT THROUGH AT ALL. 
 	 * 
-	 * Largely a copy of the Subcorpus funcitons, then QueryScope can delegate. The setup func is different. 
+	 * Largely a copy of the Subcorpus functions, then QueryScope can delegate. The setup func is different. 
 	 * 
 	 */
 	/**
@@ -2389,7 +2446,7 @@ class Restriction
 	public function form_t_value_is_activated($t_value)
 	{			
 		if (false === strpos($t_value, '|'))
-			/* do we have this as a must-appear-wiothin? e. */
+			/* do we have this as a must-appear-within? e. */ //TODO
 			return $this->parsed_conditions[$t_value] = '~~~within';
 
 		list($field, $cond) = explode('|', $t_value);
@@ -2409,7 +2466,7 @@ class Restriction
 		global $Config;
 		global $cqp;
 		
-		$dumpfile = "{$Config->dir->cache}/sc_temp_{$Config->instance_name}"; 
+		$dumpfile = "{$Config->dir->cache}/restr_dump_{$Config->instance_name}"; 
 		$this->create_dumpfile($dumpfile);
 
 		$cqp->execute("undump Curr-Restriction < '$dumpfile'");
@@ -2528,7 +2585,7 @@ class Restriction
 		/* only bother setting up the info array if we know at least 1 non-text-based condition is in play */
 		if ($this->item_type != 'text')
 		{
-			$xmlinfo = get_xml_all_info($this->corpus);
+			$xmlinfo = get_all_xml_info($this->corpus);
 			foreach ($xmlinfo as $k=>$v)
 				$xmlinfo[$k]->catdescs = xml_category_listdescs($this->corpus, $k);
 		}
@@ -2583,7 +2640,7 @@ class Restriction
 						if (empty($idlinkinfo[$idlink_att]))
 						{
 							/* idlinkinfo : set up on need */
-							$idlinkinfo[$idlink_att] = get_all_idlink_info($this->corpus, "{$att_fam}_$idlink_att");
+							$idlinkinfo[$idlink_att] = get_all_idlink_field_info($this->corpus, "{$att_fam}_$idlink_att");
 							foreach ($idlinkinfo[$idlink_att] as $k=>$v)
 								$idlinkinfo[$idlink_att][$k]->catdescs = idlink_category_listdescs($this->corpus, "{$att_fam}_$idlink_att", $k);
 						}
@@ -2683,7 +2740,7 @@ class Subcorpus
 	/** size of subcorpus in n of items (i.e. whateverr unit it is "denominated" in */
 	private $n_items;
 	
-	/** size of subcorpus in n of tokens  */
+	/** size of subcorpus in n of tokens */
 	private $n_tokens;
 	
 	/* 
@@ -2980,7 +3037,7 @@ class Subcorpus
 		case '@':
 		case '$':
 			$this->mode = self::MODE_RESTRICTION;
-			$this->restriction = Restriction::new_by_unserialise($this->content);
+			$this->restriction = Restriction::new_by_unserialise($this->content, $this->corpus);
 			$this->restriction->size_items($this->item_type);  
 			break;
 		}
@@ -3034,6 +3091,8 @@ class Subcorpus
 	 * All return true or false if error as detected.
 	 */
 
+	
+	
 	/**
 	 * Creates a new Subcorpus from a list of items.
 	 * 
@@ -3075,7 +3134,7 @@ class Subcorpus
 		{
 			$this->item_identifier = 'id';
 			
-			$whereclause = translate_itemlist_to_where($item_list, true, 'text_id');
+			$whereclause = translate_itemlist_to_where($item_list);
 			
 			$result = do_mysql_query("SELECT count(*), sum(words) FROM text_metadata_for_{$this->corpus} WHERE $whereclause");
 			list($this->n_items, $this->n_tokens) = mysql_fetch_row($result);
@@ -3166,6 +3225,81 @@ class Subcorpus
 		return $this->populate_from_list('text', 'id', $texts);
 	}
 	
+	
+	
+	/**
+	 * Makes the subcorpus consist of all and only the XML elements 
+	 * containing one or more results for a specified query.
+	 * Should only be called on a newly-created object. 
+	 * 
+	 * @param string $qname  Qname identifier. If the query file isn't in cache, then the function will return false.
+	 * @param string $att    Handle of the s-attribute to use.
+	 */
+	public function populate_from_query_xml($qname, $att)
+	{
+		global $cqp;
+
+		/* check the connection to CQP */
+		if (isset($cqp))
+			$cqp_was_set = true;
+		else
+		{
+			$cqp_was_set = false;
+			connect_global_cqp();
+		}
+		
+		if (!xml_exists($att, $this->corpus))
+			return false;
+
+		/* get region cpos list from query result */
+		
+		$cqp->execute("Unsaveable = $qname expand to $att");
+		$dump = $cqp->execute("dump Unsaveable");
+		
+		if (!$cqp_was_set)
+			disconnect_global_cqp();
+				
+		if (false === $dump)
+			return false;
+		
+		$index = array();
+		foreach ($dump as $dumpline)
+		{
+			list($b,$e) = explode("\t", $dumpline);
+			$index["$b-$e"] = '';
+		}
+		unset($dump);
+// show_var($index);
+
+		$seqpos_list = array();
+		$seq = 0;
+
+		$source = open_xml_attribute_stream($this->corpus, $att);
+		
+		while (false !== ($l = fgets($source)))
+		{
+// 			show_var($l); 
+			list($begin, $end) = explode("\t", trim($l));
+// 				show_var($seq);
+			if (isset($index["$begin-$end"]))
+			{
+				$seqpos_list[] = $seq;
+			}
+			++$seq;
+// 			if( $seq > 10) exit;
+		}
+// show_var($seqpos_list);exit;
+		
+		pclose($source);
+
+		/* this then collapses to the procedure for an item list... */
+		return $this->populate_from_list($att, '', $seqpos_list);
+	}
+	
+	
+	
+	
+	
 	/**
 	 * Should only be called on a newly-created object.
 	 * 
@@ -3188,17 +3322,25 @@ class Subcorpus
 		
 		if ( $item_type != 'text' || $item_identifier != 'id' )
 			return false;
-		
-		$result = do_mysql_query("select text_id from text_metadata_for_" . $this->corpus);
-		
-		$texts_for_new = array();
-		
-		while (false !== ($r = mysql_fetch_row($result)))
-			if (!in_array($r[0], $texts_to_exclude))
-				$texts_for_new[] = $r[0];
-		
-		/* so then it just collapses to... */
-		return $this->populate_from_list($item_type, $item_identifier, $texts_for_new);
+// 		{
+			/* difficult style: we have to invert either by regions, or by cpos pair. */
+			// get the regions from $source_sc, and invert on that basis.
+			// TODO
+// 		}
+		else
+		{
+			/* easy style: the subcorpus consists just of texts known by their ID */
+			$result = do_mysql_query("select text_id from text_metadata_for_" . $this->corpus);
+			
+			$texts_for_new = array();
+			
+			while (false !== ($r = mysql_fetch_row($result)))
+				if (!in_array($r[0], $texts_to_exclude))
+					$texts_for_new[] = $r[0];
+			
+			/* so then it just collapses to... */
+			return $this->populate_from_list($item_type, $item_identifier, $texts_for_new);
+		}
 	}
 	
 	/**
@@ -3328,6 +3470,8 @@ class Subcorpus
 		$item = $this->item_type;
 		return $this->n_items;
 	}
+
+//TODO w eneed to distinguish between lists of regions, and lists of region-idlinkers. EG, size in utternaces, versus size in speakers. 	
 	
 	
 	
@@ -3336,7 +3480,7 @@ class Subcorpus
 	 * 
 	 * See notes on Subcorpus. If this Restriction is not a whole set of texts, return false.
 	 * 
-	 * Otherwise return an array: 0=>size in tokens, 0=>size in texts.
+	 * Otherwise return an array: 0=>size in tokens, 1=>size in texts.
 	 */
 	public function size_of_classification_intersect($category_filters)
 	{
@@ -3359,7 +3503,7 @@ class Subcorpus
 				$e = preg_replace('/(\w+)~(\w+)/', '(`$1` = \'$2\')', $e);
 			$filter_where_conditions = implode(" && ", $category_filters); 
 			
-			$text_list_where = translate_itemlist_to_where($this->item_list, true, 'text_id');
+			$text_list_where = translate_itemlist_to_where($this->item_list);
 			
 			return mysql_fetch_row(
 					do_mysql_query(
@@ -3817,7 +3961,7 @@ class Subcorpus
 	/**
 	 * Writes this subcorpus out to a file in the cache directory, as a CQP-dumpfile.
 	 * 
-	 * Note that this is unconditional -- no check for whether the dumpfile exists or not. 
+	 * Note that this is unconditional -- no check for whether the dumpfile exists or not.
 	 * 
 	 * If it does exist it will be overwritten.
 	 * 
@@ -3832,7 +3976,7 @@ class Subcorpus
 		{
 		case self::MODE_ARBITRARY:
 			/* if this is an arbitrary-cpos-data subcorpus, we already have the dumpfile ---
-			 * it's the canonical locus of the arbitrary pairs; so just check it really exists.  */ 
+			 * it's the canonical locus of the arbitrary pairs; so just check it really exists.  */
 			return file_exists($outpath);
 			
 			
@@ -3846,16 +3990,16 @@ class Subcorpus
 
 			$dest = fopen($outpath, 'w');
 			
-			if ($this->item == 'text')
+			if ($this->item_type == 'text')
 			{
-				$wherelist = translate_itemlist_to_where($this->text_list);
+				$wherelist = translate_itemlist_to_where($this->item_list);
 				
 				$result = do_mysql_query("SELECT cqp_begin, cqp_end FROM text_metadata_for_{$this->corpus} WHERE $wherelist ORDER BY cqp_begin ASC");
 				
 				$buf = NULL;
 				while (false !== ($r = mysql_fetch_object($result)))
 				{
-					/* the use of a buffer object allows us to merge adjacent ranges. */ 
+					/* the use of a buffer object allows us to merge adjacent ranges. */
 					if (empty($buf))
 						$buf = $r;
 					else
@@ -3947,6 +4091,54 @@ class Subcorpus
 
 
 
+/** Container for a specification of the size of a scope (for function return values.) */
+class ScopeSize
+{
+	/** Size in tokens */
+	public $tokens = 0;
+	/** Size in items (texts, xml ranges, etc.) */
+	public $items  = 0;
+	/** Contains the type of item contained in this scope, by XML ID string. 
+	 *  If they are texts, = "text". If they are nondescript cpos pairs, = ''. */
+	public $item_type   = '';
+	
+	/** IF the scope is defined by (for instance speaker) ids then the n of Ids can be placed here.*/
+	public $item_ids = 0;
+	/** IF item_ids is set, then the item_identifier attribute is added here. */
+	public $item_identifier = '';
+	
+	/*
+	 * Example: a scope consisting of 4 speakers. The values are:
+	 * tokens - 3464
+	 * items  - 234   (utterances)
+	 * item_type - 'u' (utterance)
+	 * item_ids - 4   (speakers)
+	 * item_identifier - 'who' (speaker ID code is in u_who) (note tehe breakdown of such attributes is as in the QueryScope etc.)
+	 * 
+	 * TODO, document further with mroe ecxamples here.
+	 */
+	
+	/* the constructor is just for quick setup */
+	public function construct($tokens, $items = 0, $item_type = '', $item_ids = 0, $item_identifier = '')
+	{
+		//TODO allow array input???
+		$this->tokens = $tokens;
+		$this->items  = $items;
+		$this->item_type = $item_type;
+		$this->item_ids = $item_ids;
+		$this->item_identifier = $item_identifier;
+	}
+}
+/* 
+ * ====================== 
+ * end of class ScopeSize 
+ * ====================== 
+ */
+
+
+
+
+
 
 
 
@@ -4014,6 +4206,33 @@ function delete_restriction_from_cache($id)
 }
 
 
+/**
+ * Deletes from the restriction cache any restrictions that mention 
+ * a particular s-attribute in a given corpus.
+ * 
+ * @param string $corpus      Handle of the corpus.
+ * @param string $xml_handle  Handle of the s-attribute (complete: e.g., s_type).
+ */
+function uncache_restrictions_by_xml($corpus, $xml_handle)
+{
+	$corpus = mysql_real_escape_string($corpus);
+	
+	$result = do_mysql_query("select id, serialised_restriction from saved_restrictions where corpus = '$corpus'");
+	
+	/* NB. for non-heads of att family, e.g. "u_who", the first and second parts (u vs. who) can be badly split up in 
+	 * a restriction string. Rather than parse the string, and then check for the presence of the specific thing
+	 * whose uncaching was requested,let's instead uncache everything that involves the FAMILY.
+	 * IE, if u_who changes datatype, uncache everything that references u. This emasn we can just look for the 
+	 * "head of att family" s-attribute which will be preceded by ^. 
+	 */
+	$xml_info = get_xml_info($corpus, $xml_handle);
+	$xml_handle = $xml_info->att_family; /* always safe because a faily head maps to itself. */
+
+	while (false !== ($o = mysql_fetch_object($result)))
+		if (preg_match("/\^$xml_handle\b/", $o->serialised_restriction)) 
+			delete_restriction_from_cache($o->id);
+}
+
 
 /**
  * Delete excess entries from the restriction cache to bring it back under the size limit.
@@ -4033,7 +4252,7 @@ function delete_restriction_overflow()
 		
 		/* Alas, we have to call the size-me-up function after each loop, because we can't work out how much we've dropped
 		 * the size of the table by deleting a single row, as that does not take into account the index. */
-		if ($Config->max_cached_restrictions > get_mysql_table_size("saved_restrictions"))
+		if ($Config->restriction_cache_size_limit > get_mysql_table_size("saved_restrictions"))
 			return;
 		
 		/* possible race condition: if new ones are cached by a parallel instance 
@@ -4112,8 +4331,6 @@ function translate_restriction_cpos_to_db($cpos_collection)
 	
 	return $data;
 }
-
-//TODO check the round trip.
 
 
 
@@ -4253,17 +4470,25 @@ function sort_positionlist($list)
  * 
  * (Although associated with subcorpora and restrictions, this is more 
  * of a general utility function than a method that belongs on either object.)
+ * 
+ * @param string|array $item_list  The item list. If a string, should be space delimited.
+ *                                 Alternatively can be an array.
+ * @param string $fieldname        The name of the column to be tested by the where-clause. 
+ *                                 If we're going for the text-metadata table, that should be
+ *                                 "text_id", which is the default value. Other tables may need
+ *                                 other column names to be specified. 
+ * @return string                  String containing conditions to be inserted 
+ *                                 in an SQL where-clause. 
  */
-function translate_itemlist_to_where($item_list, $as_array = false, $fieldname = 'text_id')
+function translate_itemlist_to_where($item_list, $fieldname = 'text_id')
 {
 	$fieldname = cqpweb_handle_enforce($fieldname);
 
-	if ($as_array)
+	if (is_array($item_list))
 		$list = $item_list;
 	else
 		$list = explode(' ', $item_list);
-	//low-importance-TODO. why not use is_array / is_string instead?
-	
+
 	return "($fieldname='" . implode("'||$fieldname='", $list) . "')";
 }
 
@@ -4281,12 +4506,21 @@ function translate_itemlist_to_where($item_list, $as_array = false, $fieldname =
  */
 function check_textlist_valid($text_list, $corpus = NULL)
 {
-	$badnames = array();
-	foreach($text_list as $id)
-		if (!check_real_text_id($id, $corpus))
-			$badnames[] = $id;
+	if (empty($corpus))
+	{
+		global $Corpus;
+		$corpus = $Corpus->name;
+	}
+	$actual_texts = corpus_list_texts($corpus);
+	
+	$badnames = array_diff($text_list, $actual_texts);
+
+// 	$badnames = array();
+// 	foreach($text_list as $id)
+// 		if (!check_real_text_id($id, $corpus))
+// 			$badnames[] = $id;
+// array_diff should be quicker
 	return $badnames;
-// a n ote. might it not be quicker to get the entire list of text_ids using corpus_list_texts()? Then in_Array?
 }
 
 
@@ -4316,73 +4550,5 @@ function check_real_text_id($text_id, $c = NULL)
 	return ( 0 < mysql_num_rows(do_mysql_query($sql)) );
 }
 
-
-/**
- * Opens a readable pipe to cwb-s-decode for the specified attribute on the specified corpus.
- * 
- * TODO delete this func - see note below.
- * 
- *  Utility function for Subcorpus / Restriction.
- */
-function get_s_decode_stream($att, $with_values, $corpus = NULL)
-{
-	global $Config;
-	global $Corpus;
-
-	if (is_null($corpus) )
-		$corpus = $Corpus->name;
-	
-	if ($corpus == $Corpus->name)
-		$uc_corpus = $Corpus->cqp_name;
-	else
-	{
-		$c_info = get_corpus_info($corpus);
-		$uc_corpus = $c_info->cqp_name;
-	}
-	
-	$val = ($with_values ? '' : '-v');
-	
-	if (false === ($pipe = popen("{$Config->path_to_cwb}cwb-s-decode $val -r \"{$Config->dir->registry}\" $uc_corpus -S $att", "r")))
-		exiterror("Could not open pipe to cwb-s-decode!!");
-	
-	return $pipe;
-}
-
-/// TODO. the fubnc above dupplicates one I already had (in xml.inc ---> for reference, a copy is in comments that follow.)
-//  The func above should be removed!!!!!!
-// /*
-//  * Gets a readable stream resource to cwb-s-decode for 
-//  * the underlying s-attribute of the specified XML.
-//  * 
-//  * Exits with an error if opening of the stream fails.
-//  * 
-//  * The resource returned can be closed with pclose().
-//  */ 
-// function open_xml_attribute_stream($corpus, $att_handle)
-// {
-// 	if (false === ($c = get_corpus_info($corpus)))
-// 		exiterror("Cannot open xml attribute stream: corpus does not exist.");
-	
-// 	if (false === ($x = get_xml_info($corpus, $att_handle)))
-// 		exiterror("Cannot open xml attribute stream: specified s-attribute does not exist.");
-
-// 	/* the above also effectively validates the arguments  */
-
-// 	global $Config;
-	
-// 	$cmd = "{$Config->path_to_cwb}cwb-s-decode -r {$Config->dir->registry} {$c->cqp_name} -S $att_handle";
-	
-// 	if (false === ($source = popen($cmd, "r")))
-// 		exiterror("Cannot open xml attribute stream: process open failed for ``$cmd'' .");
-
-// 	return $source;
-// }
-//TODO
-//TODO
-//TODO
-//TODO
-//TODO
-//TODO
-//TODO
 
 

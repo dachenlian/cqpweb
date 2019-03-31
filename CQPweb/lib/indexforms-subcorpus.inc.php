@@ -87,12 +87,17 @@ function printquery_subcorpus()
 			print_sc_nameform($badname_entered, 2);
 			print_sc_define_query();
 			break;
+		case 'query_regions':
+			print_sc_nameform($badname_entered, 2);
+			print_sc_define_query_regions();
+			break;
 		case 'metadata_scan':
 			/* no name form in metadata scan -- the name is specified in the list page */
 			print_sc_define_metadata_scan();
 			break;		
 		case 'manual':
-			print_sc_nameform($badname_entered, 1);
+			/* manual entry can involve LONG lists of ID codes - so use post not get as form method */
+			print_sc_nameform($badname_entered, 1, 'post');
 			print_sc_define_filenames();
 			break;
 		case 'invert':
@@ -149,7 +154,8 @@ function print_sc_newform($with_return_option)
 									<option value="metadata_scan">Scan text metadata</option>
 									<option value="manual"       >Manual entry of filenames</option>
 									<option value="invert"       >Invert an existing subcorpus</option>
-									<option value="query"        >Texts found in a saved query</option>
+									<option value="query"        >Full texts found in a saved query</option>
+									<option value="query_regions">Partial-text regions found in a saved query</option>
 									<option value="text_id"      >Create a subcorpus for every text</option>
 									<?php if ($with_return_option) echo "<option value=\"return\">Return to list of existing subcorpora</option>\n"; ?>
 								</select>
@@ -173,16 +179,16 @@ function print_sc_newform($with_return_option)
 
 
 /* this function STARTS the create form; other functions must finish it */
-function print_sc_nameform($badname_entered, $colspan)
+function print_sc_nameform($badname_entered, $colspan, $form_method = 'get')
 {
 	if ($colspan < 2)
 		$colspan_text = '';
 	else
 		$colspan_text = " colspan=\"$colspan\"";
-	
 	?>
+
 	<table class="concordtable" width="100%">
-	<form action="subcorpus-admin.php" method="get">
+	<form action="subcorpus-admin.php" method="<?php echo $form_method; ?>">
 		<tr>
 			<th class="concordtable"<?php echo $colspan_text; ?>>Design a new subcorpus</th>
 		</tr>
@@ -198,7 +204,7 @@ function print_sc_nameform($badname_entered, $colspan)
 					is not allowed as a name for a subcorpus.
 				</td>
 			</tr>
-			<?php	
+			<?php
 		}
 		
 		?>
@@ -261,16 +267,7 @@ function print_sc_define_metadata()
 
 	$checkarray = array();
 
-	/* build checkarray from the http query string */
-// 	preg_match_all('/&t=([^~]+)~([^&]+)/', $_SERVER['QUERY_STRING'], $pairs, PREG_SET_ORDER );
-// 	foreach($pairs as $p)
-// 		$checkarray[$p[1]][$p[2]] = 'checked="checked" ';
-// 	if (false === ($restriction = Restriction::new_from_url($_SERVER['QUERY_STRING'])))
-// 		;
-// 	else
-// 		foreach ($restriction->get_form_check_pairs() as $pair)
-// 			$checkarray[$pair[0]][$pair[1]] = 'checked="checked" ';
-	
+	/* build checkarray from the http query string */	
 	$insert_r = Restriction::new_from_url($_SERVER['QUERY_STRING']); /* possibly false! */
 	
 	echo printquery_build_restriction_block($insert_r, 'subcorpus');
@@ -295,25 +292,26 @@ function print_sc_define_query()
 	$result = do_mysql_query("select query_name, save_name from saved_queries 
 								where corpus = '{$Corpus->name}' and user = '{$User->username}' and saved = ".CACHE_STATUS_SAVED_BY_USER);
 	
-	$no_saved_queries = (mysql_num_rows($result) == 0);
+	$no_saved_queries = (0 == mysql_num_rows($result));
 	
 	$field_options = '';
-	while ( ($r = mysql_fetch_row($result)) !== false)
+	while (false !== ($r = mysql_fetch_row($result)) )
 	{
+		if (!isset($_GET['savedQueryToScan']))
+			$_GET['savedQueryToScan'] = '';
 		$selected = ($r[0] == $_GET['savedQueryToScan'] ? 'selected="selected"' : '');
 		$field_options .= "\t<option value=\"{$r[0]}\" $selected>{$r[1]}</option>\n";
 	}
 	?>
 		<tr>
 			<td class="concordgeneral" colspan="2" align="center">
-				&nbsp;
-				<br/>
+				&nbsp;<br/>
 				Select a query from your Saved Queries list using the control below.
 				<br/>&nbsp;<br/>
-				Then either directly create a subcorpus consisting of <strong>all texts that contain at
-				least one result for that query</strong>, or view a list of texts to choose from.
-				<br/>&nbsp;
-				<br/>
+				Then either directly create a subcorpus consisting of 
+				<strong>the whole of every text that contains at least one result for that query</strong>,
+				 or view a list of texts to choose from.
+				<br/>&nbsp;<br/>
 			</td>
 		</tr>
 		<tr>
@@ -358,7 +356,119 @@ function print_sc_define_query()
 				<br/>&nbsp;
 			</td>
 		</tr>
-		<input type="hidden" name="scriptMode" value="create_from_query"/>
+		<input type="hidden" name="scriptMode" value="create_from_query_texts"/>
+		<input type="hidden" name="thisQ" value="subcorpus"/>
+		<input type="hidden" name="uT" value="y"/>
+	</table>
+	<?php
+
+}
+
+/* this function ENDS the create form */
+function print_sc_define_query_regions()
+{
+	/*
+	 * A note.
+	 * 
+	 * this is a minor variant on the "query" form. But, because one can go to a "list of texts" and the other can't,
+	 * it seemed better to separate them. If at any point it seems like they can be folded together, do that!
+	 */
+	
+	global $User;
+	global $Corpus;
+	
+	$result = do_mysql_query("select query_name, save_name from saved_queries 
+								where corpus = '{$Corpus->name}' and user = '{$User->username}' and saved = ".CACHE_STATUS_SAVED_BY_USER);
+	
+	$no_saved_queries = (0 == mysql_num_rows($result));
+	
+	if (!isset($_GET['savedQueryToScan']))
+		$_GET['savedQueryToScan'] = '';
+	$field_options = '';
+	while ( false !== ($r = mysql_fetch_row($result)) )
+	{
+		$selected = ($r[0] == $_GET['savedQueryToScan'] ? 'selected="selected"' : '');
+		$field_options .= "\t<option value=\"{$r[0]}\" $selected>{$r[1]}</option>\n";
+	}
+	
+	if (!isset($_GET['xmlAtt']))
+		$_GET['xmlAtt'] = '';
+	$xml_options = '';
+	foreach(list_xml_elements($Corpus->name) as $handle => $desc)
+	{
+		if ($handle == 'text')
+			continue;
+		$selected = ($handle == $_GET['xmlAtt'] ? 'selected="selected"' : '');
+		$xml_options .= "\t<option value=\"$handle\" $selected>".escape_html($desc)."</option>\n";
+	}
+	
+	
+	?>
+		<tr>
+			<td class="concordgeneral" colspan="2" align="center">
+				&nbsp;<br/>
+				Select a query from your Saved Queries list using the control below.
+				<br/>&nbsp;<br/>
+				Then select one of the available list of <b>region types</b> (defined sub-parts within different corpus texts)
+				to create a subcorpus consisting of just the regions containing one or more hits in that saved query.
+				<br/>&nbsp;<br/>
+			</td>
+		</tr>
+		<tr>
+			<?php
+			if ($no_saved_queries)
+			{
+				?>
+				<td class="concorderror" colspan="2">
+					You do not have any saved queries.
+				</td>
+				<?php
+			}
+			else
+			{
+				?>
+				<td class="concordgeneral" width="50%">
+					&nbsp;<br/>
+					Which Saved Query do you want to use as the basis of the subcorpus?
+					<br/>&nbsp;
+				</td>
+				<td class="concordgeneral">
+					&nbsp;<br/>
+					<select name="savedQueryToScan">
+						<?php echo $field_options; ?>
+					</select>
+					<br/>&nbsp;
+				</td>
+			</tr>
+			<tr>
+				<td class="concordgeneral">
+					&nbsp;<br/>
+					Which type of sub-text region do you want the subcorpus to be made up of?
+					<br/>&nbsp;
+				</td>
+				<td class="concordgeneral">
+					&nbsp;<br/>
+					<select name="xmlAtt">
+						<?php echo $xml_options; ?>
+					</select>
+					<br/>&nbsp;
+				</td>
+				<?php		
+			}
+			?>
+		</tr>
+		<tr>
+			<td class="concordgeneral" colspan="2" align="center">
+				&nbsp;<br/>
+				<input name="action" type="submit" value="Create subcorpus from selected query"/>
+				<br/>&nbsp;<br/>&nbsp;<br/>
+				<input type="reset" value="Clear form"/>
+				&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+				<input name="action" type="submit" value="Cancel"/>
+				<br/>&nbsp;
+			</td>
+		</tr>
+		<input type="hidden" name="scriptMode" value="create_from_query_regions"/>
 		<input type="hidden" name="thisQ" value="subcorpus"/>
 		<input type="hidden" name="uT" value="y"/>
 	</table>
@@ -899,6 +1009,30 @@ function print_sc_addtexts()
 
 }
 
+// temp function for no-edit subcorpora
+function print_sc_no_view_possible()
+{
+	?>
+	<table class="concordtable" width="100%">
+		<tr>
+			<th class="concordtable" colspan="5">Create and edit subcorpora</th>
+		</tr>
+			<tr>
+				<td class="concordgrey" colspan="5" align="center">
+					<strong>
+						&nbsp;<br/>
+						You can't edit this subcorpus because it does not consist of a whole number of complete texts.
+						<br/>
+						Editing subcorpora of sub-text regions may be possible in later versions of CQPweb!
+					</strong>
+					<br/>&nbsp;
+				</td>
+			</tr>
+	</table>
+	<?php
+}
+
+
 //TODO
 //TODO
 //TODO
@@ -921,7 +1055,12 @@ function print_sc_view_and_edit()
 	$check = '';
 	$n_currently = $subcorpus->size_items($check);
 	if ('text' != $check)
-		exiterror("You can't edit this subcorpus because it does not consist of a whole number of texts. This may be possible ");
+	{
+		print_sc_no_view_possible();
+		return;
+	}
+// 		exiterror("You can't edit this subcorpus because it does not consist of a whole number of texts. "
+// 				. "This may be possible in later versions of CQPweb!");
 
 
 	if (!isset($_GET['subcorpusFieldToShow']))
@@ -938,7 +1077,7 @@ function print_sc_view_and_edit()
 	else
 	{
 		if (metadata_field_is_classification($show_field))
-			$catdescs = metadata_category_listdescs($show_field);
+			$catdescs = array_map("escape_html", metadata_category_listdescs($show_field));
 		else
 			$catdescs = false;
 		$field_options = "\n";
@@ -977,10 +1116,13 @@ function print_sc_view_and_edit()
 	<!--
 	function subcorpusAlterForm()
 	{
-	//	document.getElementById('subcorpusTextListMainForm').action = "index.php";
-	//	document.getElementById('inputSubcorpusToRemoveFrom').name = "<?php echo $subcorpus->id; ?>";
-	//	document.getElementById('inputScriptMode').name = "subcorpusFunction";
-	//	document.getElementById('inputScriptMode').value = "view_subcorpus";
+//nb 2016-04-25 -- OLD VERSION REACTIVATED WHILE NEW VERSION IS PENDING. In spite of rambly comments above.
+		document.getElementById('subcorpusTextListMainForm').action = "index.php";
+		document.getElementById('inputSubcorpusToRemoveFrom').name = "subcorpusToView";
+		document.getElementById('inputSubcorpusToRemoveFrom').value = "<?php echo $subcorpus->id; ?>";
+		document.getElementById('inputScriptMode').name = "subcorpusFunction";
+		document.getElementById('inputScriptMode').value = "view_subcorpus";
+		document.getElementById('subcorpusTextListMainForm').submit();
 	}
 	//-->
 	</script>
@@ -1009,8 +1151,8 @@ function print_sc_view_and_edit()
 				</td>
 			</tr>
 			<tr>
-				<th class="concordtable">No.</th>		
-				<th class="concordtable">Text</th>		
+				<th class="concordtable">No.</th>
+				<th class="concordtable">Text</th>
 					<th class="concordtable">
 						Showing:
 						<select name="subcorpusFieldToShow">
@@ -1018,8 +1160,8 @@ function print_sc_view_and_edit()
 						</select>
 						<input type="button" onclick="subcorpusAlterForm()" value="Show" />
 					</th>
-				<th class="concordtable">Size in words</th>		
-				<th class="concordtable">Delete</th>		
+				<th class="concordtable">Size in words</th>
+				<th class="concordtable">Delete</th>
 			</tr>
 	<?php
 	
@@ -1040,9 +1182,9 @@ function print_sc_view_and_edit()
 			, '</a></strong></td>'
  			;
 			
-		/* primary classification (or whatever classification has been selected) */
+		/* primary classification (or whatever metadata feature has been selected) */
 		echo '<td class="concordgeneral">'
-			, ($show_field === false 
+			, ($show_field === false
 					? '&nbsp;'
 					: ($catdescs !== false ? $catdescs[$meta[$show_field]] : $meta[$show_field])
 					)
@@ -1087,6 +1229,8 @@ function print_sc_list_of_files()
 	/* the form that refers to this one stashes a longvalue. */
 	list ($list_of_texts_to_show_in_form, $header_cell_text, $field_to_show) 
 		= explode('~~~~~', longvalue_retrieve($_GET['listOfFilesLongValueId']));
+	if (empty($field_to_show))
+		$field_to_show = $Corpus->primary_classification_field;
 
 	$field_to_show_desc = metadata_expand_field($field_to_show);
 	
@@ -1186,9 +1330,9 @@ function print_sc_list_of_files()
 				, '</a></strong></td>'
  				;
 				
-			/* primary classification */
+			/* primary (or other) classification */
 			echo '<td class="concordgeneral">'
-				, $meta[$field_to_show]
+				, (empty($field_to_show) ? '' : $meta[$field_to_show])
 				, '</td>'
  				;
 			

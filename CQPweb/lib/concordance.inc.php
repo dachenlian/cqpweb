@@ -29,8 +29,10 @@
  */
 
 
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
 
-/* initialise variables from settings files  */
 require('../lib/environment.inc.php');
 
 /* include function library files */
@@ -47,7 +49,6 @@ require('../lib/db.inc.php');
 require('../lib/user-lib.inc.php');
 require('../lib/plugins.inc.php');
 require('../lib/xml.inc.php');
-require("../lib/cwb.inc.php");
 require("../lib/cqp.inc.php");
 
 cqpweb_startup_environment();
@@ -104,7 +105,12 @@ else
 if (! $incoming_qname_specified )
 {
 	if (isset($_GET['theData']))
-		$theData = prepare_query_string($_GET['theData']);
+	{
+		if (isset($_GET['qstrategy']))
+			$theData = prepare_query_string($_GET['theData'], $_GET['qstrategy']);
+		else
+			$theData = prepare_query_string($_GET['theData']);
+	}
 	else
 		exiterror_parameter('The content of the query was not specified!');
 
@@ -127,35 +133,17 @@ else
 	else
 		$qmode = NULL;
 }
-/* stop "theData" & "qmode" from being passed to any other script */
+/* stop "theData", "qmode" and "qstrategy" from being passed to any other script */
 unset($_GET['theData']);
 unset($_GET['qmode']);
+unset($_GET['qstrategy']);
 /* $case_sensitive is only used if this is a new query */
 $case_sensitive = ($qmode === 'sq_nocase' ? false : true);
 
 
-/* *******************************************************************************************************************************************************
- * TEMP DEBUG CODE
- * --------------
-the old version fo the "subcorpus" detection allowed for two patterns which, to the best of my knowledge, DONT HAPPEN.
-The ONLY pattern wqhich should happen is  
-	&del=begin&t=~sc~35&del=end&...
-But, two other patterns seem to be allowed for by the code:
-	&subcorpus=35&...
-and
-	&del=begin&t=subcorpus~35&del=end&...
-i.e. the first format, but interpreted as 'twere restrictions, leading to (subcorpus='35') as a text-metadata-restrictions string.
-BUT the latter should not any longer be possible, due to the new subcorpus flag (&t=~sc~)
-So this debug code asserts that there is not _GET[subcorpus]
-*/
-assert_options(ASSERT_BAIL, 1);
-assert(!array_key_exists('subcorpus', $_GET), "CRITICAL BUG: subcorpus key exists in _GET. Please report this error to Andrew Hardie. ");
-/* end temp debug code ***********************************************************************************************************************************/
 
 
-// if ($User->is_admin()) show_var($_SERVER['QUERY_STRING']);
 $qscope = QueryScope::new_from_url($_SERVER['QUERY_STRING'], true); 
-// if ($User->is_admin()) show_var($qscope);
 
 if (QueryScope::TYPE_EMPTY == $qscope->type)
 {
@@ -205,19 +193,18 @@ else
  * Note that &pp=count indicates that rather than show ANY 
  * hits, we should just display how many hits there were,
  * plus print out the command bar to allow additional analysis.
+ * 
+ * This is used to override the "program" variable (which presumes 
+ * we are NOT just counting the hits).
  */
 if (isset($_GET['pp']))
 	$per_page = prepare_per_page($_GET['pp']);   /* filters out any invalid options */
 else
 	$per_page = $Config->default_per_page;
-	
+
 if ($per_page == 'count')
-{
-	$count_hits_then_cease = true;
-	$per_page = $Config->default_per_page;
-}
-else
-	$count_hits_then_cease = false;
+	$_GET['program'] = 'count_hits_then_cease';
+
 if ($per_page == 'all')
 {
 	$show_all_hits = true;
@@ -227,29 +214,32 @@ else
 	$show_all_hits = false;
 
 
-/* viewMode can be either kwic or line. It is sanitised below. */
+/* viewMode can be either kwic or line. Allow no other values. */
 if (isset($_GET['viewMode']))
-	$viewMode = $_GET['viewMode'];
+	$view_mode = ('kwic' == $_GET['viewMode'] ? 'kwic' : 'line');
 else
-	$viewMode = ( (bool) $User->conc_kwicview ? 'kwic' : 'line' ) ;
+	$view_mode = ( $User->conc_kwicview ? 'kwic' : 'line' ) ;
 	
 /* there is an override... when translation is showing, only line mode is possible */
 if ($Corpus->visualise_translate_in_concordance)
-	$viewMode = 'line';
+	$view_mode = 'line';
 
+/* any possible aligned data in this corpus? */
+$align_info = check_alignment_permissions(list_corpus_alignments($Corpus->name));
 
-/* set kwic variables */
-if ($viewMode == "kwic") 
+/* do we need to show the aligned region for each match? */
+$show_align = false;
+/* again note override: we do not allow BOTH translation viz AND parallel corpus viz */
+if (isset($_GET['showAlign'])&& ! $Corpus->visualise_translate_in_concordance)
 {
-	$reverseViewMode = "line";
-	$reverseViewButtonText = "Line View";
+	if ( isset($align_info[$_GET['showAlign']]) )
+	{
+		$show_align = true;
+		$alignment_att_to_show = $_GET['showAlign'];
+		$alignment_att_description = $align_info[$_GET['showAlign']];
+	}
 }
-else
-{
-	$viewMode = "line";
-	$reverseViewMode = "kwic";
-	$reverseViewButtonText = "KWIC View";
-}
+
 
 
 
@@ -265,6 +255,7 @@ else
 	case 'sort':
 	case 'lookup':
 	case 'categorise':
+	case 'count_hits_then_cease':
 		$program = $_GET['program'];
 		break;
 	default:
@@ -272,16 +263,6 @@ else
 		break;
 	}
 }
-
-
-
-
-
-/* ----------------------- *
- * gather some corpus info *
- * ----------------------- */
-
-$primary_tag_handle = $Corpus->primary_annotation;
 
 
 
@@ -347,12 +328,8 @@ if ( $incoming_qname_specified )
 			
 		$cqp_query = $cache_record->cqp_query;
 		$simple_query = $cache_record->simple_query;
-// 		$subcorpus = $cache_record->subcorpus;
-		unset($_GET['subcorpus']); // TODO is this necessary??????????? here or anywhere?
-// 		$restrictions = $cache_record->restrictions;
 		
 		/* overwrite the previously-established $qscope if we have loaded a cached query */
-// 		$qscope = QueryScope::new_by_unserialise(empty($subcorpus) ? $restrictions : $subcorpus);
 		$qscope = $cache_record->qscope;
 		
 		$postprocess = $cache_record->postprocess;
@@ -384,11 +361,11 @@ if ( ! $incoming_qname_specified )
 		if (false === ($cqp_query = process_simple_query($theData, $case_sensitive, $ceql_errors)))
 		{
 			/* if conversion fails, add to history & then add syntax error code */
-			history_insert($Config->instance_name, $query, $qscope->serialise(), $query, ($case_sensitive ? 'sq_case' : 'sq_nocase'));
+			history_insert($Config->instance_name, '', $qscope->serialise(), $simple_query, ($case_sensitive ? 'sq_case' : 'sq_nocase'));
 			history_update_hits($Config->instance_name, -1);
 			
 			/* and then call an error with the array of diagnostic strings from CEQL. */
-			exiterror_general($ceql_errors);
+			exiterror($ceql_errors);
 		}
 	}
 	/* either way, $theData is no longer needed */
@@ -401,7 +378,7 @@ if ( ! $incoming_qname_specified )
 	
 	/* look in the cache for a query that matches this one on crucial parameters */
 
-	$cache_record = QueryRecord::new_from_params($Corpus->name, $cqp_query, $qscope);
+	$cache_record = QueryRecord::new_from_params($Corpus->name, $qmode, $cqp_query, $qscope);
 
 	if  ( $cache_record === false || 0 == ($num_of_solutions = $cache_record->hits()) )
 	{
@@ -472,12 +449,11 @@ if ($run_new_query)
 	/* set restrictions / activate subcorpus */
 	$qscope->insert_to_cqp(); 
 
-	// echo "Executing query: " . "$qname = $cqp_query";
 	/* this is the business end */
-	$cqp->execute("$qname = $cqp_query");
+	$cqp->query("$qname = $cqp_query");
 
 	/* now that we have the query, find out its size */
-	// echo "Result size: " . $cqp->querysize($qname);
+	
 	if (0 == ($num_of_solutions = $cqp->querysize($qname)) )
 	{
 		/* no solutions: update the history, then send the user a message and exit */
@@ -488,13 +464,12 @@ if ($run_new_query)
 	}
 	
 	/* otherwise, save the query file to disk, then create a cache record. */
-
 	$cqp->execute("save $qname");
 
 	$num_of_texts = count( $cqp->execute("group $qname match text_id") );
 	/* note that this field in the record always refers to the ORIGINAL num of texts
 	 * so, it is OK to set it here and not anywhere else (as postprocesses don't affect it) */
-	
+
 	/* put the query in the cache and get a cache-record object.*/
 	$cache_record = QueryRecord::create(
 			$qname, 
@@ -504,8 +479,6 @@ if ($run_new_query)
 			$simple_query, 
 			$cqp_query, 
 			$qscope,
-// 			$restrictions, 
-// 			$subcorpus,
 			$num_of_solutions, 
 			$num_of_texts
 			);
@@ -516,14 +489,15 @@ else
 	/* if ! $run_new_query, do nothing. The query has been retrieved from cache. */
 }
 
-/* set flag in history for query completed */
+/* set flag in history for query completed (IFF a record was created): overwrite default "run error" value of -3  */
 if ($history_inserted)
 	history_update_hits($Config->instance_name, $num_of_solutions);
-	/* IF this query created a record, update it (To overwrite the default "run error" value, which is -3) */
+
 
 /* -------------------------------------------------------- *
  * END OF MAIN CHUNK THAT RUNS THE QUERY AND GETS SOLUTIONS *
  * -------------------------------------------------------- */
+
 
 /* --------------------------------------------- *
  * End of section which runs two separate tracks *
@@ -535,7 +509,6 @@ if ($history_inserted)
  * START OF POSTPROCESSING *
  * ----------------------- */
 
-// echo "postprocess";die;
 /* note that, for reasons of auto-thinning queries for users with restricted access, all this bit is inside a once-only loop */ 
 while (true)
 {
@@ -546,7 +519,7 @@ while (true)
 		
 		$postprocess = $new_postprocess->add_to_postprocess_string($postprocess);
 		
-		$check_cache_record = QueryRecord::new_from_params($Corpus->name, $cqp_query, $qscope, $postprocess);
+		$check_cache_record = QueryRecord::new_from_params($Corpus->name, $qmode, $cqp_query, $qscope, $postprocess);
 
 		
 		/*	If it exists, the orig qname is replaced by this one */
@@ -582,8 +555,6 @@ while (true)
 			$run_new_query = true;
 			/* so that it won't say the answer was retrieved from cache in the heading */
 		}
-// TEMP DEBUG CHECK: $postprocess should either way now be identical to the contents of the object's postprocess strign
-if ($postprocess !== $cache_record->postprocess) {show_var($postprocess); /*show_var($cache_record);*/ exiterror("CRITICAL POSTPROCESS BUG IN ".__FILE__." line ".__LINE__);}
 	} /* endif $new_postprocess */
 	
 	/* get the highlight-positions table */
@@ -591,7 +562,7 @@ if ($postprocess !== $cache_record->postprocess) {show_var($postprocess); /*show
 	$highlight_positions_array = $cache_record->get_highlight_position_table($highlight_show_tag);
 	
 	/* even if tags are to be shown, don't do so if no primary annotation is specified, or if we are lgossing the text */
-	$highlight_show_tag = ( $highlight_show_tag &&  !empty($primary_tag_handle)  && !$Corpus->visualise_gloss_in_concordance );
+	$highlight_show_tag = ( $highlight_show_tag &&  !empty($Corpus->primary_annotation)  && !$Corpus->visualise_gloss_in_concordance );
 	
 	
 	/* --------------------- *
@@ -670,8 +641,6 @@ if ($page_no > $num_of_pages)
  * DISPLAY THE CONCORDANCE *
  * ----------------------- */
 	
-	//show_var($cache_record);
-
 
 /* if program is word-lookup, we don't display here - we go straight to freqlist. */
 if ($program == 'lookup')
@@ -685,39 +654,60 @@ if ($program == 'lookup')
 
 /* begin HTML page.... */
 
-echo print_html_header($Corpus->title . " -- CQPweb Concordance", $Config->css_path);
+/* list of JS files: any specified extra code files, plus the standard categorise func. */
+$js_scripts = extra_code_files_for_concord_header('conc', 'js');
+if ($program == 'categorise')
+	$js_scripts[] = 'categorise';
 
+echo print_html_header(		$Corpus->title . " -- CQPweb Concordance", 
+							$Config->css_path, 
+							$js_scripts, 
+							extra_code_files_for_concord_header('conc', 'css') 
+						);
 
 /* print table headings && control lines */
 
 echo "\n<table class=\"concordtable\" width=\"100%\">\n";
 
-echo '<tr><th colspan="8" class="concordtable">' 
+echo '<tr><th colspan="', ( (!empty($align_info) && $program != 'count_hits_then_cease') ? 9 : 8 ), '" class="concordtable">' 
 	, $cache_record->print_solution_heading()
 	, format_time_string($time_taken, $run_new_query)
 	, "</th></tr>\n\n"
 	;
 
-// Longterm-TODO:  (low priority) make the control row contain only the extra-action menu iff $count_hits_then_cease 
-$control_row = print_control_row($cache_record);
+$control_row = print_control_row(
+					$cache_record,
+					array_merge(
+						array(
+							'program'=>$program, 
+							'page_no'=>$page_no, 
+							'per_page'=>$per_page, 
+							'num_of_pages'=>$num_of_pages, 
+							'view_mode'=>$view_mode, 
+							'align_info' => $align_info
+						), 
+						($show_align ? array('alignment_att'=> $alignment_att_to_show) : array())
+					)
+				);
 
 if ($program == "sort")
 {
 	/* if the query being displayed is sorted, then we need to put the sort position 
 	 * into the control row, and we also need a second control row for the sort. */
 	$sort_pos_recall = 0;
-	$sort_control_row = print_sort_control($primary_tag_handle, $cache_record->postprocess, $sort_pos_recall);
-	echo add_sortposition_to_control_row($control_row, $sort_pos_recall), $sort_control_row;
+	$sort_control_row = print_sort_control($Corpus->primary_annotation, $cache_record->postprocess, $sort_pos_recall);
+	echo add_sortposition_to_control_row($control_row, $sort_pos_recall)
+		, $sort_control_row
+		;
 }
 else
 	echo $control_row;
 
 
 /* having done the control row, it is time to exit if we are in count-hits mode */
-if ($count_hits_then_cease)
+if ($program == 'count_hits_then_cease')
 {
-	echo '</table>';
-	echo print_html_footer('concordance');
+	echo '</table>', print_html_footer('concordance');
 	cqpweb_shutdown_environment();
 	exit();
 }
@@ -731,13 +721,17 @@ $cqp->execute("set Context {$Corpus->conc_scope} " . ($Corpus->conc_scope_is_bas
 if ($Corpus->visualise_gloss_in_concordance)
 	$cqp->execute("show +word +{$Corpus->visualise_gloss_annotation} ");
 else
-	$cqp->execute('show +word ' . (empty($primary_tag_handle) ? '' : "+$primary_tag_handle "));
-	/* note that $primary_tag_handle should only be empty in an unannotated corpus. */
+	$cqp->execute('show +word ' . (empty($Corpus->primary_annotation) ? '' : "+{$Corpus->primary_annotation} "));
+	/* note that $Corpus->primary_annotation should only be empty in an unannotated corpus. */
 
 /* what inline s-attributes to show? (xml elements) */
-$xml_tags_to_show = xml_visualisation_s_atts_to_show();
+$xml_tags_to_show = xml_visualisation_s_atts_to_show('conc');
 if ( ! empty($xml_tags_to_show) )
 	$cqp->execute('show +' . implode(' +', $xml_tags_to_show));
+
+/* what a-attributes to show? (parallel lines) */
+if ($show_align)
+	$cqp->execute('show +' . $alignment_att_to_show);
 
 /* what corpus location attributes to show? */
 $cqp->execute('set PrintStructures "' 
@@ -746,7 +740,8 @@ $cqp->execute('set PrintStructures "'
 				. ($Corpus->visualise_translate_in_concordance ? "{$Corpus->visualise_translate_s_att} " : '') 
 				. 'text_id'
 				. ($Corpus->visualise_position_labels ? " {$Corpus->visualise_position_label_attribute}" : '')
-				. '"');
+				. '"'
+				);
 
 $cqp->execute("set LeftKWICDelim '--%%%--'");
 $cqp->execute("set RightKWICDelim '--%%%--'");
@@ -754,31 +749,29 @@ $cqp->execute("set RightKWICDelim '--%%%--'");
 
 
 
-/* what number does the concordance start and end at? */
-/* conc_ = numbers that are shown */
-/* batch_ = numbers for CQP, which are one less */
+/* what number does the concordance start and end at? 
+ * conc_ = numbers that are shown
+ * batch_ = numbers for CQP, which are one less */
 $conc_start = (($page_no - 1) * $per_page) + 1; 
-$conc_end = $conc_start + $per_page - 1;
+$conc_end   = $conc_start + $per_page - 1;
 if ($conc_end > $num_of_solutions_final)
 	$conc_end = $num_of_solutions_final;
 
 $batch_start = $conc_start - 1;
-$batch_end = $conc_end - 1;
+$batch_end   = $conc_end - 1;
 
 /* get an array containing the lines of the query to show this time */
 $kwic = $cqp->execute("cat $qname $batch_start $batch_end");
 
 /* get a table of corpus positions */
 // $table = $cqp->dump($qname, $batch_start, $batch_end);
-// This is a match / matchend / target / anchor table, formerly used (in BNCweb) for something to do with rendering
-// but not used in CQPweb.
-// just in case:
-$table = array();
+// This is a match / matchend / target / anchor table, formerly used (in BNCweb) for something to do with rendering but not used in CQPweb.
+// Set up empty variable for passing to not-used parameter
+// $table = array();
 
-/* n = number of concordances we have to display in this run of the script */
-$n = count($kwic);
-
-
+/* n = number of concordances we have to display in this run of the script (may be less than $per_page) */
+$n_words = count($kwic);
+/* NOTE: if we have requested parallel corpus display, $n is 2 x the number of conc lines, and every other array entry is an align-line! */
 
 
 ?>
@@ -794,13 +787,13 @@ if ($program == 'categorise')
 	
 	/* and note, in this case we will need info on categories for the drop-down controls */ 
 	$list_of_categories = catquery_list_categories($qname);
-	$category_table = catquery_get_categorisation_table($qname, $conc_start, $conc_start+$n-1);
+	$category_table = catquery_get_categorisation_table($qname, $conc_start, $conc_start+($show_align?$n_words/2:$n_words)-1);
 }
 
 
 /* column headings */
 echo '<tr><th class="concordtable">No</th><th class="concordtable">Filename</th><th class="concordtable"'
-	, ( $viewMode == 'kwic' ? ' colspan="3"' : '' )
+	, ( $view_mode == 'kwic' ? ' colspan="3"' : '' )
 	, ">Solution $conc_start to $conc_end &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Page $page_no / $num_of_pages</th>"
 	, ($program == 'categorise' ? '<th class="concordtable">Category</th>' : '')
 	, "</tr>\n\n"
@@ -814,26 +807,46 @@ echo '<tr><th class="concordtable">No</th><th class="concordtable">Filename</th>
  * concordance line print loop *
  * --------------------------- */
 
+/* display parameter hash for print_concordance_line */
+$display_params = array(
+		'qname' => $qname,
+		'view_mode' => $view_mode,
+		'highlight_show_tag' => $highlight_show_tag,
+		'line_number' => $conc_start-1,
+		'show_align' => $show_align
+);
+if ($show_align)
+	$display_params['alignment_att_to_show'] = $alignment_att_to_show;
 
-for ( $i = 0, $b = ($highlight_positions_array !== false) ; $i < $n ; $i++ )
+for ( $i = 0, $highlight_check = ($highlight_positions_array !== false) ; $i < $n_words ; $i++ )
 {
-	$highlight_position = ($b ? (int)$highlight_positions_array[$conc_start + $i - 1] : 1000000);
+// 	$highlight_position = ($b ? (int)$highlight_positions_array[$conc_start + $i - 1] : 1000000);
+	/* set the display parameters specific to this iteration of the loop */
+// 	$display_params['line_number'] = $conc_start + $i;
+	$display_params['line_number'] = ($show_align ? $conc_start + ($i / 2) : $conc_start + $i);
+	if ($highlight_check)
+		$display_params['highlight_position'] = (int)$highlight_positions_array[$display_params['line_number'] - 1] ;
 	
-	$line = print_concordance_line($kwic[$i], $table, ($conc_start + $i), $highlight_position, $highlight_show_tag);
+// 	$line = print_concordance_line($kwic[$i], $table, ($conc_start + $i), $highlight_position, $highlight_show_tag);
+	$line = print_concordance_line($kwic[$i], $display_params);
 
 	$categorise_column = '';
 	if ($program == 'categorise') 
 	{
+		/* The index into the category table is the number displayed (we set an index var for brevity)
+		 * (note the category table uses the same refnumbers as the line-labels, ie, they are 1-based not 0-based.)
+		 */
+		$cat_ix = $display_params['line_number'];
 		/* lookup what category this line has, and then build a box for it */
-		$categorise_column = '<td align="center" class="concordgeneral">';
-		$categorise_column .= '<select name="cat_' . ($conc_start + $i) . '">';
+		$categorise_column = '<td align="center" class="concordgeneral"' . ($show_align ? ' rowspan="2"' : '') . '>';
+		$categorise_column .= '<select class="category_chooser" name="cat_' . $cat_ix . '">';
 		
-		if ($category_table[$conc_start + $i] === NULL)
+		if ($category_table[$cat_ix] === NULL)
 			$categorise_column .= '<option select="selected"> </option>';
 
 		foreach($list_of_categories as $thiscat)
 		{
-			$select =  ($category_table[$conc_start + $i] == $thiscat) ? ' selected="selected"' : '' ; 
+			$select =  ($category_table[$cat_ix] == $thiscat) ? ' selected="selected"' : '' ; 
 			$categorise_column .= "<option$select>$thiscat</option>";
 		}
 		
@@ -841,6 +854,11 @@ for ( $i = 0, $b = ($highlight_positions_array !== false) ; $i < $n ; $i++ )
 	}
 	
 	echo "\n<tr>", $line, $categorise_column, "</tr>\n";
+	
+	/* print an extra row iff we have parallel corpus data from an alignment attribute */
+	if ($show_align)
+		echo "\n<tr>", print_aligned_line($kwic[++$i], $display_params), "</tr>\n";
+	/* NOTE the extra increment to get to the next line because in this case the array contains twice as many lines (see above) */
 }
 /* end of concordance line print loop */
 
@@ -849,6 +867,7 @@ for ( $i = 0, $b = ($highlight_positions_array !== false) ; $i < $n ; $i++ )
 if ($program == 'categorise')
 	echo print_categorise_control()
 		, '<input type="hidden" name="redirect" value="categorise"/>'
+		, ($show_align ? '<input type="hidden" name="showAlign" value="' . $alignment_att_to_show . '"/>' : '')
 		, '<input type="hidden" name="pageNo" value="' , $page_no , '"/>'
 		, '<input type="hidden" name="qname" value="' , $qname , '"/>'
 		, '<input type="hidden" name="uT" value="y"/>'

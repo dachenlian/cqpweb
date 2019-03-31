@@ -23,9 +23,16 @@
 
 
 
-/* print a form to collect the options for running collocations */
+/**
+ * @file 
+ * 
+ * Print a form to collect the options for running collocations 
+ */
 
-/* initialise variables from settings files  */
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
+
 require('../lib/environment.inc.php');
 
 
@@ -76,10 +83,6 @@ echo print_html_header("{$Corpus->title} -- CQPweb Collocation Options", $Config
 			
 			$num_annotation_rows = mysql_num_rows($result_annotations);
 			
-// 			$sql_query = "select primary_annotation from corpus_info where corpus = '{$Corpus->name}'";
-// 			$result_fixed = do_mysql_query($sql_query);
-// 			/* this will only contain a single row */
-// 			list($primary_att) = mysql_fetch_row($result_fixed);
 			$primary_att = $Corpus->primary_annotation;
 
 			?>

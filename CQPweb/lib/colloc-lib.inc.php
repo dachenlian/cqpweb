@@ -546,11 +546,11 @@ function calculate_types_in_window($sql_endclause, $strings_to_remove_from_endcl
 		$sql_endclause = str_replace($s, '', $sql_endclause);
 	/* note: we need to filter out based on the RANGE limits, but NOT based on the frequency cutoffs. */
 	
-	$sql_query = "select $item, count($item) as observed
+	$sql = "select $item, count($item) as observed
 			from $dbname, $freq_table_to_use
 			$sql_endclause";
 	
-	return mysql_num_rows(do_mysql_query($sql_query));
+	return mysql_num_rows(do_mysql_query($sql));
 
 //	global $dbname;
 //	global $att_for_calc;

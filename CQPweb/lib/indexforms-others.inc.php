@@ -85,8 +85,8 @@ function printquery_who()
 			were shamelessly half-inched from <em>BNCweb</em>.</p>
 			
 			<p>BNCweb's most recent version was written by Sebastian Hoffmann 
-			(University of Trier) and Stefan Evert (University of 
-			Osnabr&uuml;ck). It was originally created by Hans-Martin Lehmann, 
+			(University of Trier) and Stefan Evert (FAU Erlangen-Nuremberg). 
+			It was originally created by Hans-Martin Lehmann, 
 			Sebastian Hoffmann, and Peter Schneider.</p>
 			
 			<p>The underlying technology of CQPweb is manifold.</p>
@@ -155,14 +155,171 @@ function printquery_latest()
 
 
 	<ul>
-<!-- 		Made text-based Distribution work with queries based on (some) complex forms of restricted query. -->
+		<li>
+		<b>Version 3.2.30</b>, 2017-10-04<br/>&nbsp;<br/>
+		Added an alternative method to insert new p/s-attributes: via rescanning the corpus registry file.
+		<br/>&nbsp;</li>
+		
+		<li>
+		<b>Version 3.2.29</b>, 2017-09-29<br/>&nbsp;<br/>
+		Added a new method of corpus export: separate text files within a zip archive.
+		<br/>&nbsp;</li>
+		
+		<li>
+		<b>Version 3.2.28</b>, 2017-09-28<br/>&nbsp;<br/>
+		Added a way to add new data to a corpus without re-indexing it (s-attributes and corpus metadata). 
+		<br/>&nbsp;</li>
+		
+		<li>
+		<b>Version 3.2.27</b>, 2017-09-25<br/>&nbsp;<br/>
+		Revamped the Distribution system to allow for non-text-based Distrbution statistics. 
+		<br/>&nbsp;<br/>
+		Fixed a longstanding and embarrassing potential security hole (non-use of CQP QueryLock for user queries).
+		<br/>&nbsp;<br/>
+		Added Lexical Growth graph-drawing function as first of an anticipated series of data visualisation tools.
+		<br/>&nbsp;<br/>
+		Added a system for XML visualisation templates.
+		<br/>&nbsp;<br/>
+		Added an option for users to get frequency-list downloads in AntConc-compatible format.
+		<br/>&nbsp;<br/>
+		Added a control to the search form allowing the CQP match-strategy to be set.
+		<br/>&nbsp;<br/>
+		Tweaked some database structures in an attempt to optimise.
+		<br/>&nbsp;<br/>
+		Fixed a CEQL bug with queries of the form {LEMMA/TAG}: the fallback to searching secondary
+		plus tertiary annotations was not working, now it is.
+		<br/>&nbsp;<br/>
+		Fixed multiple other bugs, including a potential data-shadow in the Restriction cache.
+		<br/>&nbsp;</li>
+		
+		<li>
+		<b>Version 3.2.26</b>, 2016-12-23<br/>&nbsp;<br/>
+		Added access to CQP binary files for privileged users (for archiving, etc. purposes).
+		<br/>&nbsp;<br/>
+		Added administrative tools for creating and editing user privileges.
+		<br/>&nbsp;<br/>
+		Added additional admin tools for controlling user login sessions, as well as some extra security
+		measures to the change-password mechanism.
+		<br/>&nbsp;</li>
+		
+		<li>
+		<b>Version 3.2.25</b>, 2016-12-15<br/>&nbsp;<br/>
+		Added a <em>new feature</em> (yay!): experimental lexical growth curve analysis system.
+		<br/>&nbsp;<br/>
+		Fixed a bug that stopped XML values containing spaces rendering correctly in the concordance.
+		<br/>&nbsp;<br/>
+		Fixed a number of bugs in the storage of subcorpora containing very many texts selected individually
+		or using the <em>scan text metadata</em> tool.
+		<br/>&nbsp;<br/>
+		Added a tool in the administrator's interface to delete the entire query history 
+		(thus, setting the usage statistics back to empty values). 
+		<br/>&nbsp;<br/>
+		Reorganised the text metadata management screen. 
+		<br/>&nbsp;<br/>
+		Improved error messages in the save-query system.
+		<br/>&nbsp;<br/>
+		Improved the gizmos for monitoring disk usage: query cache control now distinguishes user-saved 
+		data from deletable cache data, user profile view says how much disk space they are using for 
+		saved/categorised queries.
+		<br/>&nbsp;<br/>
+		(v 3.2.24 was a partial way-point towards 3.2.25, it gets no separate entry.)
+		<br/>&nbsp;</li>
+		
+		<li>
+		<b>Version 3.2.23</b>, 2016-08-08<br/>&nbsp;<br/>
+		Made parallel-corpus view work properly in categorise-query mode.
+		<br/>&nbsp;<br/>
+		Made the limit on the size of file a user can upload configurable via the privilege system.
+		<br/>&nbsp;<br/>
+		Fixed one or two bugs.
+		<br/>&nbsp;</li>
+		
+		<li>
+		<b>Version 3.2.22</b>, 2016-07-31<br/>&nbsp;<br/>
+		Added support for alignment attributes: 
+		display of one parallel corpus matching-region is possible in concordance/context view, 
+		inclusion of multiple parallel corpus matching-regions is possible in concordance download.
+		<br/>&nbsp;</li>
+		
+		<li>
+		<b>Version 3.2.21</b>, 2016-07-04<br/>&nbsp;<br/>
+		Fixed a critical bug in the code calculating confidence intervals for keywords and lockwords.
+		<br/>&nbsp;</li>
+		
+		<li>
+		<b>Version 3.2.20</b>, 2016-07-01<br/>&nbsp;<br/>
+		Added XML visualisation in concordance download.
+		<br/>&nbsp;</li>
+		
+		<li>
+		<b>Version 3.2.19</b>, 2016-06-29<br/>&nbsp;<br/>
+		Added the ability to create subcorpora from sub-text regions containing a query hit.
+		<br/>&nbsp;<br/>
+		Added metadata view for XML-based ID-link metadata (e.g. speaker metadata in spoken corpora).
+		<br/>&nbsp;</li>
+		
+		<li>
+		<b>Version 3.2.18</b>, 2016-06-25<br/>&nbsp;<br/>
+		Reimplemented the XML visualisation system.
+		<br/>&nbsp;<br/>
+		Made breaking paragraphs after punctuation in extended context view optional, rather than always implemented.
+		<br/>&nbsp;<br/>
+		Allowed "extra code files" (JS/CSS) to be added to enhance the visualisations.
+		<br/>&nbsp;</li>
+		
+		<li>
+		<b>Version 3.2.17</b>, 2016-06-03<br/>&nbsp;<br/>
+		Fixed a bug affecting the installation of pre-indexed corpora.
+		<br/>&nbsp;<br/>
+		Fixed a critical bug in the Frequency Breakdown that was getting "words to the Left" and "words to the Right" the wrong way round.
+		<br/>&nbsp;<br/>
+		Cleaned up the user management interface a bit.
+		<br/>&nbsp;</li>
+		
+		<li>
+		<b>Version 3.2.16</b>, 2016-06-02<br/>&nbsp;<br/>
+		Fixed a small but critical bug affecting stopping the system running on PHP version 7.
+		<br/>&nbsp;</li>
+		
+		<li>
+		<b>Version 3.2.15</b>, 2016-05-31<br/>&nbsp;<br/>
+		Tweaked the user-permissions lookup system to make pages load faster.
+		<br/>&nbsp;<br/>
+		Fixed some miscellaneous bugs, including one in the log-on system.
+		<br/>&nbsp;</li>
+		
+		<li>
+		<b>Version 3.2.14</b>, 2016-04-04<br/>&nbsp;<br/>
+		Added the &ldquo;export corpus&rdquo; function.
+		<br/>&nbsp;</li>
+		
+		<li>
+		<b>Version 3.2.13</b>, 2016-04-03<br/>&nbsp;<br/>
+		Fixed the opcode cache monitor to work with newer versions of PHP.
+		<br/>&nbsp;<br/>
+		Added a cache monitor for stray temporary tables.
+		<br/>&nbsp;<br/>
+		Made some background tweaks to speed up performance.
+		<br/>&nbsp;</li>
+		
+		<li>
+		<b>Version 3.2.12</b>, 2016-03-23<br/>&nbsp;<br/>
+		Added a readout of the amount of disk space used by each corpus, and a database-cache monitor.
+		<br/>&nbsp;<br/>
+		Made it possible to add readable descriptions for XML idlink categories.
+		<br/>&nbsp;<br/>
+		Added a tool to allow the administrator to upgrade the database format to InnoDB.
+		<br/>&nbsp;<br/>
+		Added &ldquo;switched off&rdquo; mode for use during database upgrades etc.
+		<br/>&nbsp;</li>
+
 		<li>
 		<b>Version 3.2.11</b>, 2016-03-21<br/>&nbsp;<br/>
 		This is a (hopefully) stable version, prior to some upcoming extensive changes in 3.2.12.
 		<br/>&nbsp;<br/>
 		Fixed a lingering bug in the upgrade process.
 		<br/>&nbsp;<br/>
-		Fied an edge-case bug in the collocation function.
+		Fixed an edge-case bug in the collocation function.
 		<br/>&nbsp;<br/>
 		Reorganised the superuser's cache-control functions for the different types of cached data.
 		<br/>&nbsp;</li>

@@ -42,7 +42,10 @@
  */
 
 
-/* include defaults and settings */
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
+
 require('../lib/environment.inc.php');
 
 
@@ -56,7 +59,6 @@ require('../lib/subcorpus.inc.php');
 require('../lib/metadata.inc.php');
 require('../lib/xml.inc.php');
 require('../lib/multivariate.inc.php');
-require('../lib/cwb.inc.php');
 require('../lib/cqp.inc.php');
 
 

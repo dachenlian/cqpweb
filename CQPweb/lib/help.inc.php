@@ -22,13 +22,10 @@
  */
 
 
-/* ------------ *
- * BEGIN SCRIPT *
- * ------------ */
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
 
-
-
-/* initialise variables from settings files  */
 require('../lib/environment.inc.php');
 
 

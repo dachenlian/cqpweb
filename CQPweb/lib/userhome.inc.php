@@ -21,16 +21,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// TODO: mind changed about this. should *not* allow user corpora to be accessed within /usr. Access them within /exe instead.
-///* BEFORE WE INCLUDE ANY FILES: if _GET[uC] is set, then we need to make this script behave like queryhome */
-//if (isset($_GET['uC']))
-//{
-//	require("../lib/queryhome.inc.php");
-//	exit;
-//}
-///* otherwise, go on and render userhome. */
-
-
 /* initialise variables from settings files  */
 require('../lib/environment.inc.php');
 

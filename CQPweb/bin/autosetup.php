@@ -34,6 +34,7 @@ require('../lib/environment.inc.php');
 /* include function library files */
 require('../lib/library.inc.php');
 require('../lib/admin-lib.inc.php');
+require('../lib/sql-definitions.inc.php');
 require('../lib/user-lib.inc.php');
 require('../lib/exiterror.inc.php');
 require('../lib/ceql.inc.php');
@@ -59,7 +60,8 @@ include ('../lib/config.inc.php');
 /* Create only those config values needed to make mysql connection work */
 $Config = new stdClass();
 $Config->print_debug_messages = false;
-// $Config->mysql_link = (isset($mysql_link) ? $mysql_link: NULL); // TODO this line should be deleted, no? connect_global_mysql(); creates this var, below.
+$Config->debug_messages_textonly = true;
+$Config->all_users_see_backtrace = false;
 $Config->mysql_server = $mysql_server;
 $Config->mysql_webuser = $mysql_webuser;
 $Config->mysql_webpass = $mysql_webpass;
@@ -79,7 +81,7 @@ $Config->default_colloc_calc_stat = $default_colloc_calc_stat;
 $Config->default_colloc_minfreq = $default_colloc_minfreq;
 $Config->default_colloc_range = $default_colloc_range;
 $Config->default_max_dbsize = $default_max_dbsize;
-var_dump($Config);
+
 
 echo "\nInstalling database structure; please wait.\n";
 cqpweb_mysql_total_reset();

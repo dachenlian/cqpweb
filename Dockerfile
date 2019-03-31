@@ -1,13 +1,13 @@
-FROM debian:7
+FROM ubuntu:18.04
 
 ENV DEBIAN_FRONTEND noninteractive
 
-RUN apt-get update
+RUN apt-get update && apt-get install -y software-properties-common && add-apt-repository ppa:ondrej/php && apt-get update
 
 RUN apt-get install -y apache2 mysql-client \
-    mysql-server php5 php5-mysql php5-dev php5-gd \
-    php5-memcache php5-pspell php5-snmp snmp php5-xmlrpc \
-    libapache2-mod-php5 php5-cli r-base nano sendmail
+    mysql-server php7.3 php7.3-mysql php7.3-dev php7.3-gd \
+    php7.3-memcache php7.3-pspell php7.3-snmp snmp php7.3-xmlrpc \
+    libapache2-mod-php7.3 php7.3-cli r-base nano sendmail
 
 RUN mkdir -p /var/lock/apache2 /var/run/apache2
 
@@ -22,6 +22,6 @@ RUN mkdir -p /tmp/cqp && chmod 777 /tmp/cqp && \
     cd /tmp/cwb/CWB-perl && \
     perl Makefile.PL && \
     make && make install && \
-    cp /tmp/cwb/php.ini /etc/php5/apache2/php.ini
+    cp /tmp/cwb/php.ini /etc/php/7.3/apache2/php.ini
 
 EXPOSE 80

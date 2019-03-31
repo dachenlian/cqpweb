@@ -38,7 +38,7 @@
  * Object containing variables specifying a database type.
  * 
  * Each type also enfolds the "extra" variables that need to be passed to the database
- * creation function - to avoid that funciton having to make ise of global variables.
+ * creation function - to avoid that function having to make use of global variables.
  * 
  * SETUP: call new DbType() with the first argument being the appropriate DB_TYPE constant.
  * 
@@ -47,15 +47,16 @@
  * 
  * $t = new DbType(DB_TYPE_COLLOC, $colloc_atts, $colloc_range);
  * 
- * $colloc_atts is string containing a '~'-delimited list of p-attrbitues (annotation handles).
+ * where $colloc_atts is string containing a '~'-delimited list of p-attributes 
+ * (annotation handles).
  */
 class DbType
 {
 	/** Contains one of the type constants: DB_TYPE_SORT and friends. */
 	public $type;
-	/* longterm note: it would make sense ot use these in the DB rather than the little strigns currenlty used. */
+	/* longterm note: it would make sense to use these in the DB rather than the little strings currently used. */
 	
-	/** contains the little striong which is used in some cases to represent the type constant. */
+	/** contains the little string which is used in some cases to represent the type constant. */
 	public $str;
 	
 	/* Specs only used for colloc */
@@ -64,9 +65,15 @@ class DbType
 	public $colloc_range = NULL;
 	
 	
+	/**
+	 * Contains an array of valid type constants.
+	 */
+	private static $valid_types = array(DB_TYPE_DIST, DB_TYPE_COLLOC, DB_TYPE_SORT, DB_TYPE_CATQUERY);
+	/* might make more sense for these to be class constants.... */
+	
 	
 	/**
-	 * Constructor. Parameters after the first are variable.
+	 * Constructor. Parameters after the first are variable; see documentation of the class.
 	 * 
 	 * @param int  $type   One of the type constants, e.g. DB_TYPE_SORT.
 	 */
@@ -84,9 +91,9 @@ class DbType
 			/* PHP 5.6+ allows use of "..." with variable arguments, but 
 			 * that would actually be less clear than the current code. */
 			if (3 != func_num_args())
-				exiterror("Invalid DB type setup for cololcation: correct arguments not supplied.");
-			$this->colloc_atts  = func_get_arg(1); // TODO check!!!!!!
-			$this->colloc_range = func_get_arg(2); // TODO check!!
+				exiterror("Invalid DB type setup for collocation: correct arguments not supplied.");
+			$this->colloc_atts  = func_get_arg(1);
+			$this->colloc_range = func_get_arg(2);
 			break;
 		
 		case DB_TYPE_SORT:
@@ -98,11 +105,37 @@ class DbType
 			break;
 			
 		default:
-			exiterrror("Code was reached that should never be reached! (In DbType)");
+			exiterror("Code was reached that should never be reached! (In DbType)");
 		}
 		
 		/* If, at any point, the other database types come to need extra info, 
 		   add code in the switch above to set up the appropriate variables. */
+	}
+	
+	/**
+	 * Asserts that a given variable is, or type-juggles to, a valid DB_TYPE integer.
+	 * Exits the program if not.
+	 * 
+	 * @param int    $var             Variable to check.
+	 * @param string $assert_message  Optional: error message to use if the assertion fails.
+	 */
+	public static function assert($var, $assert_message = '')
+	{
+		if (empty($assert_message))
+			$assert_message = 'DbType: assertion of valid type failed.';
+		if (! self::is_valid($var))
+			exiterror($assert_message);
+	}
+	
+	/**
+	 * Checks whether a given value is, or type-juggles to, a valid DB_TYPE integer.
+	 * 
+	 * @param  int $var  Variable to check.
+	 * @return bool      True if it's valid, false if not.
+	 */	
+	public static function is_valid($var)
+	{
+		return in_array((int) $var, self::$valid_types);
 	}
 }
 
@@ -138,11 +171,12 @@ function dbname_unique($dbname)
  * in a QueryRecord object: see cache.inc.php for why (it's to support certain patterns
  * of postprocessed-query creation).
  * 
- * @param DbType $db_type      Type of databnase to create, as a specifier object.
- * @param string $qname        Name of the cached query from which to create the DB.
- * @param string $cqp_query    The cached query's actual CQP info (as in the query record)
- * @param string $query_scope  The cached query's original query scope, serialised (as in the query record).
- * @param string $postprocess  The cached query's postprocess string (as in the query record).
+ * @param  DbType $db_type      Type of database to create, as a specifier object.
+ * @param  string $qname        Name of the cached query from which to create the DB.
+ * @param  string $cqp_query    The cached query's actual CQP info (as in the query record)
+ * @param  string $query_scope  The cached query's original query scope, serialised (as in the query record).
+ * @param  string $postprocess  The cached query's postprocess string (as in the query record).
+ * @return string               The database "name" (ie the dbname field from the saved_dbs table).
  */
 function create_db($db_type, $qname, $cqp_query, $query_scope, $postprocess)
 {
@@ -180,7 +214,7 @@ function create_db($db_type, $qname, $cqp_query, $query_scope, $postprocess)
 	
 
 	/* call a function to delete dbs if they are taking up too much space*/
-	delete_saved_dbs();
+	delete_db_overflow();
 
 
 	/* get this user's distribution db size limit from their username details */
@@ -290,8 +324,8 @@ function create_db($db_type, $qname, $cqp_query, $query_scope, $postprocess)
 			'" . mysql_real_escape_string($query_scope) . "',
 			'" . mysql_real_escape_string($postprocess) . "',
 			'" . ($db_type->type == DB_TYPE_COLLOC ? mysql_real_escape_string($db_type->colloc_atts) : '') . "',
-			"  . ($db_type->type == DB_TYPE_COLLOC ? $$db_type->colloc_range : '0') . ",
-			"  . /*($db_type == 'sort' ? $sort_position : '0') . ", */ "
+			"  . ($db_type->type == DB_TYPE_COLLOC ? $db_type->colloc_range : '0') . ",
+			"  . /*($db_type->type == DB_TYPE_SORT ? $sort_position : '0') . ", */ "
 			'{$Corpus->name}',
 			'{$db_type->str}',
 			" . get_db_size($dbname) . "
@@ -299,8 +333,8 @@ function create_db($db_type, $qname, $cqp_query, $query_scope, $postprocess)
 		/* note: sort position doesn't currently get used, so I have commented it out: sort databases are in corpus order */
 
 	do_mysql_query($sql);
-	
-	
+
+
 	unregister_db_process();
 
 
@@ -333,25 +367,44 @@ function db_commands($dbname, $db_type, $qname)
 	switch($db_type->type)
 	{
 	case DB_TYPE_DIST:
-		/* IMPORTANT NOTE on the tabulate command for distributions
-		   
-		   I could have just used "group" and made the amount of info to be cached in SQL much smaller
-		   HOWEVER at some point in the future it may be possible to build in exploitation of s-attributes
-		   in which case the per-solution listing will be needed
-		*/
-		$tabulate_command = "tabulate $qname match text_id, match, matchend";
+		/* do we need to add columns for XML IDLINK? */
+		$idlink_fields = array();
+		foreach(get_all_xml_info($Corpus->name) as $xml)
+			if (METADATA_TYPE_IDLINK == $xml->datatype)
+				$idlink_fields[] = $xml->handle;
+		
+// pre xml tab command:
+// 		$tabulate_command = "tabulate $qname match text_id, match, matchend";
+		$tabulate_command = "tabulate $qname match text_id";
+		foreach($idlink_fields as $if)
+			$tabulate_command .= ", match $if";
+ 		$tabulate_command .= ', match, matchend';
+		
 		$awk_script = false;
+		
+		$extra_sql_fields = '';
+		$extra_sql_keys   = '';
+		foreach($idlink_fields as $if)
+		{
+			$extra_sql_fields .= ", `$if` varchar(255) NOT NULL"; /*nb, should prob be 200, but this is to match text id. */
+			$extra_sql_keys   .= ", key(`$if`)";
+		}
+		
+		/* WHAT REFNUMBER MEANS HERE:
+		 * Refers to a specific hit in the dist table, numbered in order of intake from CQP. */
 		$create_statement = "CREATE TABLE $dbname (
-			text_id varchar(255),
-			beginPosition int,
-			endPosition int,
-			refnumber MEDIUMINT AUTO_INCREMENT,
-			key(refnumber),
-			key(text_id)
+			text_id varchar(255) NOT NULL $extra_sql_fields,
+			beginPosition int unsigned NOT NULL,
+			endPosition int unsigned NOT NULL,
+			refnumber mediumint unsigned NOT NULL AUTO_INCREMENT,
+			
+			primary key(refnumber),
+			key(text_id) $extra_sql_keys
+			
 			) CHARACTER SET utf8 COLLATE utf8_bin";
 			/* 
 			 * note the use of a binary collation for distribution DBs, since
-			 * they always contain text_ids, not word or tag material.
+			 * they always contain handle IDs, not word or tag material.
 			 */
 		break;
 	
@@ -378,13 +431,11 @@ function db_commands($dbname, $db_type, $qname)
 		}
 	
 		/* create awk field variables */
-// 		$af['match'] = '$1';
-// 		$af['matchend'] = '$2';
-// 		$af['text_id'] = '$3';
 		$awkvar_match    = '$1';
 		$awkvar_matchend = '$2';
 		$awkvar_text_id  = '$3';
-		$corpus_size = get_corpus_wordcount($Corpus->name);
+// 		$corpus_size = get_corpus_wordcount($Corpus->name);
+		$corpus_size = $Corpus->size_tokens;
 		/* the next field after the pre-sets above: $f increments after every use */
 		$f = 4;
 
@@ -393,7 +444,7 @@ function db_commands($dbname, $db_type, $qname)
 		
 		for ($i = -$db_type->colloc_range ; $i <= $db_type->colloc_range ; $i++)
 		{
-			/* start at 1 cos no data in the tabulate output for $i == 0  */
+			/* skip 0'th position, because there is no data in the tabulate output for $i == 0  */
 			if ($i == 0)
 				continue;
 			/* before the output code: add the condition that prevents out-of-bounds tokens being included in the DB..... */
@@ -410,12 +461,14 @@ function db_commands($dbname, $db_type, $qname)
 			$awk_script .= " }\n";
 		}
 		
+		/* WHAT REFNUMBER MEANS HERE:
+		 * Refers to a specific hit - but this measn it is NOT unique within this table. Ergo not primary. */
 		$create_statement = "CREATE TABLE $dbname (
-			text_id varchar(255),
-			beginPosition int,
-			endPosition int,
-			refnumber BIGINT NOT NULL,
-			dist SMALLINT NOT NULL,
+			text_id varchar(255) NOT NULL,
+			beginPosition int unsigned NOT NULL,
+			endPosition int unsigned NOT NULL,
+			refnumber bigint unsigned NOT NULL,
+			dist smallint NOT NULL,
 			word varchar(40) NOT NULL
 			";
 		/* add a field for each positional attribute */
@@ -423,12 +476,14 @@ function db_commands($dbname, $db_type, $qname)
 			foreach ($att_array as $att)
 				$create_statement .= ",
 					`$att` varchar(40) NOT NULL";
-		$create_statement .= "\n      ) CHARACTER SET utf8 COLLATE {$Corpus->sql_collation}";
+		$create_statement .= ",
+			key (refnumber)
+			) CHARACTER SET utf8 COLLATE {$Corpus->sql_collation}";
 		
 		break;
 
 
-	case 'sort':
+	case DB_TYPE_SORT:
 		$att = $Corpus->primary_annotation;
 		$no_att = empty($att);
 
@@ -456,7 +511,9 @@ function db_commands($dbname, $db_type, $qname)
 			tagafter4 varchar(40) NOT NULL,
 			tagafter5 varchar(40) NOT NULL,";
 		$att_nodefield = $no_att ? '' : "tagnode varchar(200) NOT NULL,";
-			
+
+		/* WHAT REFNUMBER MEANS HERE:
+		 * Refers to a specific hit in the underlying concordance. */
 		$create_statement = "CREATE TABLE $dbname (
 			before5 varchar(40) NOT NULL,
 			before4 varchar(40) NOT NULL,
@@ -471,26 +528,28 @@ function db_commands($dbname, $db_type, $qname)
 			$att_fields
 			node varchar(200) NOT NULL,
 			$att_nodefield
-			text_id varchar(255),
-			beginPosition int,
-			endPosition int,
-			refnumber MEDIUMINT UNSIGNED NOT NULL AUTO_INCREMENT,
-			key(refnumber)
+			text_id varchar(255) NOT NULL,
+			beginPosition int unsigned NOT NULL,
+			endPosition int unsigned NOT NULL,
+			refnumber mediumint unsigned NOT NULL AUTO_INCREMENT,
+			primary key(refnumber)
 			) CHARACTER SET utf8 COLLATE {$Corpus->sql_collation}";
 
 		break;
 
 
-	case 'catquery':
+	case DB_TYPE_CATQUERY:
 			
 		$tabulate_command = "tabulate $qname match, matchend";
 		$awk_script = false;
+		/* WHAT REFNUMBER MEANS HERE:
+		 * Refers to a specific hit in the concordance being categorised. */
 		$create_statement = "CREATE TABLE $dbname (
-			beginPosition int,
-			endPosition int,
+			beginPosition int unsigned NOT NULL,
+			endPosition int unsigned NOT NULL,
 			refnumber MEDIUMINT UNSIGNED NOT NULL AUTO_INCREMENT,
 			category varchar(40),
-			key(refnumber),
+			primary key(refnumber),
 			key(category)
 			) CHARACTER SET utf8 COLLATE {$Corpus->sql_collation}";
 		
@@ -498,7 +557,7 @@ function db_commands($dbname, $db_type, $qname)
 
 
 	default:
-		exiterror("db_commands was called with database type '$db_type'. This is not a recognised type of database!");
+		exiterror("db_commands was called with database type [{$db_type->type}]. This is not a recognised type of database!");
 		break;
 	}
 
@@ -532,11 +591,15 @@ function touch_db($dbname)
 /** Returns total size in bytes of the MySQL data/index structures of the specified database. */
 function get_db_size($dbname)
 {
+	$dbname = mysql_real_escape_string($dbname);
+		
 	$info = mysql_fetch_assoc(do_mysql_query("SHOW TABLE STATUS LIKE '$dbname'"));
 
 	return $info['Data_length'] + $info['Index_length'];
 }
 
+
+// nonurgent TODO use objects for dbrecords instead of hashes. 
 
 /**
  * Returns AN ASSOCIATIVE ARRAY for the located db's record,
@@ -557,19 +620,28 @@ function check_dblist_dbname($dbname)
 
 
 /**
+ * Looks for a database identical to a set of parameters.
+ * 
+ * A database's "identity" is determined by the parameters involved in DB creation. 
+ * That is, a DB is "identical" to a provided set of parameters iff:
+ *  - they have the same DbType (including not only the type constant, but any ancillary variables,
+ *    such as (for collocation) the attributes used and the range.
+ *  - they are for the same fundamental query (CQP syntax)..
+ *  - ... run in the same query scope.
+ *  - ... in the same corpus (enforced automatically).
+ *  - ... with the same sequence of postprocesses.
+ * 
  * Returns AN ASSOCIATIVE ARRAY for the located db's record,
  * or false if no record could be found.
  * 
- * @param DbType $db_type      DB type specifier object including extra varaibles where necessary 
+ * @param  DbType $db_type      DB type specifier object including extra varaibles where necessary 
  *                             (colloc atts, sort positon). As in create_db.
- * @param string $cqp_query    As in create_db.
- * @param string $query_scope  As in create_db.
- * @param string $postprocess  As in create_db.
- * @return array               DB record array or Boolean false.
+ * @param  string $cqp_query    As in create_db.
+ * @param  string $query_scope  As in create_db.
+ * @param  string $postprocess  As in create_db.
+ * @return array                DB record array or Boolean false.
  */
 function check_dblist_parameters($db_type, $cqp_query, $query_scope, $postprocess)
-// function check_dblist_parameters($db_type, $cqp_query, $query_scope, $postprocess,
-// 	$colloc_atts = '', $colloc_range = 0, $sort_position = 0)
 {
 	global $Corpus;
 
@@ -585,7 +657,7 @@ function check_dblist_parameters($db_type, $cqp_query, $query_scope, $postproces
 	case DB_TYPE_COLLOC:
 		if ($db_type->colloc_range == 0)
 			exiterror("The collocation range cannot be zero!");
-		$extra_conditions = "' and colloc_atts = '" . mysql_real_escape_string($db_type->colloc_atts). "' and colloc_range = {$db_type->colloc_range}";
+		$extra_conditions = " and colloc_atts = '" . mysql_real_escape_string($db_type->colloc_atts). "' and colloc_range = {$db_type->colloc_range}";
 		break;
 		
 	case DB_TYPE_SORT:
@@ -597,14 +669,15 @@ function check_dblist_parameters($db_type, $cqp_query, $query_scope, $postproces
 	
 	/* now look for a db that matches all of that! */
 	$sql = "SELECT * from saved_dbs 
-				where db_type = '$db_type' and corpus = '{$Corpus->name}"
-					. "' and cqp_query   = '" . mysql_real_escape_string($cqp_query) 
-					. "' and query_scope = '" . mysql_real_escape_string($query_scope) 
-					. "' and postprocess = '" . mysql_real_escape_string($postprocess)
-					. $extra_conditions
-					. "  limit 1";
-	/* note: we ONLY match against colloc_atts / colloc_range when type is COLLOC; and we NEVER match against sort_position,
-	 * since it seems never to be used. */
+				where   db_type     = '{$db_type->str}' 
+				    and corpus      = '{$Corpus->name}'
+					and cqp_query   = '" . mysql_real_escape_string($cqp_query)   . "'
+					and query_scope = '" . mysql_real_escape_string($query_scope) . "'
+					and postprocess = '" . mysql_real_escape_string($postprocess) . "'
+					$extra_conditions
+					limit 1";
+	/* note: we ONLY match against colloc_atts / colloc_range when type is COLLOC; 
+	 * and we NEVER match against sort_position, since it seems never to be used. */
 
 	$result = do_mysql_query($sql);
 
@@ -622,7 +695,7 @@ function check_dblist_parameters($db_type, $cqp_query, $query_scope, $postproces
 function delete_db($dbname)
 {
 	$dbname = mysql_real_escape_string($dbname);
-	do_mysql_query("DROP TABLE IF EXISTS $dbname");
+	do_mysql_query("DROP TABLE IF EXISTS `$dbname`");
 	do_mysql_query("DELETE FROM saved_dbs where dbname = '$dbname'");
 }
 
@@ -648,14 +721,14 @@ function delete_dbs_of_query($qname)
 /** 
  * note: this function works ACROSS CORPORA && across types of db (except catquery) 
  */
-function delete_saved_dbs()
+function delete_db_overflow()
 {
 	global $Config;
 	
 	/* step one: how many bytes in size is the db cache RIGHT NOW? */
 	list($current_size) = mysql_fetch_row(do_mysql_query("select sum(db_size) from saved_dbs"));
 
-	if ($current_size <= $Config->mysql_db_size_limit)
+	if ($current_size <= $Config->db_cache_size_limit)
 		return;
 	
 	/* step 2 : get a list of deletable tables 
@@ -663,29 +736,44 @@ function delete_saved_dbs()
 	 * they must be deleted via their special table 
 	 * because otherwise entries are left in that table */
 	$sql = "select dbname, db_size from saved_dbs 
-		where saved = 0 
+		where saved = " . CACHE_STATUS_UNSAVED . " 
 		and dbname not like 'db_catquery%'
 		order by create_time asc";
 	$result = do_mysql_query($sql);
 
-	while ($current_size > $Config->mysql_db_size_limit)
+/* TODO
+	An important note: the "saved" field in saved_dbs seems bnot to be used.
+	It looks liek the intetnion was to make it flag "deletable / not deletable"
+	but this was not actually done.
+	Instead there is the "type" field, which is a string instead of  - as would be more comfortable - and integer cobnstant
+	and the same data IS IMPLICITLY STORED IN THE TABKLE PREFIX!!
+	this is ridiculous duplication.
+	
+	Better design: make the tabklename / dbname be just db_INSTANCE
+	and then rely on a "type" integer constant in the database. 
+	this would also speed the abiove query up by not using the LIKE operator.
+*/
+	
+
+	while ($current_size > $Config->db_cache_size_limit)
 	{
 		if ( false === ($current_db_to_delete = mysql_fetch_assoc($result)) )
 			break;
-		
 		delete_db($current_db_to_delete['dbname']);
 		$current_size -= $current_db_to_delete['db_size'];
 	}
 	
 	/* if we weren't able to get current_size down far enough.... */
-	if ($current_size > $Config->mysql_db_size_limit)
+	if ($current_size > $Config->db_cache_size_limit)
 		exiterror_dboverload();
 }
 
 
 
 /**
- * dump all cached dbs from the database INCLUDING ones where the "saved" field is flagged
+ * dump all cached dbs from the database INCLUDING ones where the "saved" field is flagged.
+ * 
+ * Operates across users and across corpora.
  */
 function clear_dbs($type = '__NOTYPE')
 {
@@ -699,6 +787,44 @@ function clear_dbs($type = '__NOTYPE')
 		delete_db($current_db_to_delete['dbname']);
 }
 
+
+
+
+/**
+ * Deletes a specified database from MySQL, unconditionally.
+ * 
+ * Note it only works on database tables!
+ * 
+ * If passed an array rather than a single table name, it will iterate across 
+ * the array, deleting each specified table.
+ * 
+ * Designed for deleting bits database tables that have become unmoored from
+ * the record in saved_dbs that would normally enable their deletion.
+ */
+function delete_stray_db_table($table)
+{
+	if (! is_array($table))
+		$table = array($table);
+	
+	foreach ($table as $t)
+		if (preg_match('/^db_/', $t))
+			do_mysql_query("drop table if exists `" . mysql_real_escape_string($t) . "`");
+}
+
+/**
+ * Deletes a db record from the cache table, unconditionally.
+ * 
+ * If passed an array rather than a single db name, it will iterate across 
+ * the array, deleting each specified db record.
+ */
+function delete_stray_db_entry($dbname)
+{
+	if (!is_array($dbname))
+		$dbname = array($dbname);
+	
+	foreach ($dbname as $db)
+		do_mysql_query("DELETE from saved_dbs where dbname = '" . mysql_real_escape_string($db) . "'");
+}
 
 
 
@@ -734,7 +860,7 @@ function check_db_max_processes($process_type)
 		$os_pids = shell_exec( 'ps -e' );
 		
 		/* check each row of the result */
-		while (($pidrow = mysql_fetch_row($result)) !== false)
+		while (false !== ($pidrow = mysql_fetch_row($result)))
 		{
 			if (preg_match("/\s{$pidrow[0]}\s/", $os_pids) == 0)
 			{
@@ -744,26 +870,24 @@ function check_db_max_processes($process_type)
 			}
 		}
 		if ($dead_processes > 0)
-			return true;			/* the list was full, but 1+ process was found to be dead */
+			return true;            /* the list was full, but 1+ process was found to be dead */
 		else
-			return false;			/* the list was full, and no dead processes */
+			return false;           /* the list was full, and no dead processes */
 	}
 	else
-		return true;				/* the list was not full */
+		return true;                /* the list was not full */
 }
 	
 
 
 /** 
  * Adds the current instance of PHP's process-id to a list of concurrent db processes.
- * 
- * Note: is dbname actually needed? it's prob for diagnostic purposes and it does no harm.
  */
-function register_db_process($dbname, $process_type, $process_id = '___THIS_SCRIPT')
+function register_db_process($dbname, $process_type, $process_id = NULL)
 {
 	$dbname = mysql_real_escape_string($dbname);
 	$process_type = mysql_real_escape_string($process_type);
-	if ($process_id == '___THIS_SCRIPT')
+	if (empty($process_id))
 		$process_id = getmypid();
 	else
 		$process_id = mysql_real_escape_string($process_id);
@@ -771,7 +895,7 @@ function register_db_process($dbname, $process_type, $process_id = '___THIS_SCRI
 	$sql = "insert into system_processes (dbname, begin_time, process_type, process_id)
 		values ('$dbname', $begin_time, '$process_type', '$process_id' )";
 	do_mysql_query($sql);
-	//TODO maybe also record the instance name, and the MySQL connection-id?
+	//TODO maybe also record the MySQL connection-id?
 }
 
 

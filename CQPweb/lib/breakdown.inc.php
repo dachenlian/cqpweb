@@ -23,14 +23,14 @@
 
 
 
-/* ------------ *
- * BEGIN SCRIPT *
- * ------------ */
 
 /* like similar scripts, this delays writing to stdout until the end because of dual output formats */
 
 
-/* initialise variables from settings files  */
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
+
 require('../lib/environment.inc.php');
 
 
@@ -44,8 +44,8 @@ require('../lib/concordance-lib.inc.php');
 require('../lib/concordance-post.inc.php');
 require('../lib/subcorpus.inc.php');
 require('../lib/db.inc.php');
+require('../lib/xml.inc.php');
 require('../lib/user-lib.inc.php');
-require("../lib/cwb.inc.php");
 require("../lib/cqp.inc.php");
 
 cqpweb_startup_environment(CQPWEB_STARTUP_DONT_CONNECT_CQP );
@@ -64,7 +64,6 @@ cqpweb_startup_environment(CQPWEB_STARTUP_DONT_CONNECT_CQP );
 
 $qname = safe_qname_from_get();
 /* now get all the info about the query in one handy package */
-// $query_record = check_cache_qname($qname);
 $query_record = QueryRecord::new_from_qname($qname);
 if ($query_record === false)
 	exiterror_general("The specified query $qname was not found in cache!");
@@ -166,7 +165,7 @@ else
 	$dbname = $db_record['dbname'];
 	touch_db($dbname);
 }
-/* this dbname & its db_record can be globalled by print functions in the script */
+/* this dbname & its db_record can be globalled by print functions within this script */
 
 
 /* find out how big the db is: types and tokens */
@@ -182,7 +181,7 @@ list($db_tokens_total, $db_types_total) = mysql_fetch_row(do_mysql_query($sql));
 $sql = "select {$breakdown_of_info[$breakdown_of]['sql_label']} as n, 
 	count({$breakdown_of_info[$breakdown_of]['sql_label']}) as sum 
 	from $dbname group by {$breakdown_of_info[$breakdown_of]['sql_groupby']} 
-	order by sum desc
+	order by sum desc, {$breakdown_of_info[$breakdown_of]['sql_label']} asc
 	$limit_string";
 $result = do_mysql_query($sql);
 
@@ -299,7 +298,12 @@ else
 				</select>
 
 				' . url_printinputs(array(
-						array('concBreakdownAt', ''), array('tableDownloadMode', ''), array('redirect', ''), array('uT', ''), array('qname', $qname)
+						array('concBreakdownAt', ''), 
+						array('tableDownloadMode', ''), 
+						array('pageNo', ''), 
+						array('redirect', ''), 
+						array('uT', ''), 
+						array('qname', $qname)
 					) ) 
 				. '
 
@@ -338,7 +342,7 @@ else
 		<table class="concordtable" width="100%">
 			<tr>
 				<th class="concordtable" align="left">No.</th>
-				<th class="concordtable" align="left">Search result</th>
+				<th class="concordtable" align="left">Query result</th>
 				<th class="concordtable">No. of occurrences</th>
 				<th class="concordtable">Percent</th>
 			</tr>

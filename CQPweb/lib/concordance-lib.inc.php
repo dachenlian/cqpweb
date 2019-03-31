@@ -29,30 +29,26 @@
 
 
 /**
- * Standardises the whitespace within a query string, and checks for its being empty.  
+ * Standardises the whitespace within a query string, and checks for its being empty. 
+ * If a valid query strategy is passed in as the second argument, it is added to the 
  * 
- * @param  string  $s  Query string submitted to concordance.php via GET.
- * @return string      Standardised string.
+ * @param  string  $query     Query string submitted to concordance.php via GET.
+ * @param  string  $strategy  Possible match strategy flag to prepend to the query.
+ * @return string             Standardised string.
  */
-function prepare_query_string($s)
+function prepare_query_string($query, $strategy = false)
 {
-// 	if (!preg_match('/\S/', $s))
-// 		exiterror('You are trying to search for nothing!');
-
-	/* remove extra whitespace and internal line breaks / tabs */
-// 	$s = trim($s);
-// 	/*  */
-// 	$s = str_replace("\r", ' ', $s);
-// 	$s = str_replace("\n", ' ', $s);
-// 	$s = str_replace("\t", ' ', $s);
-// 	$s = str_replace('  ', ' ', $s);
-// 	$s = strtr($s, "\r\n\t", "   ");
 	/* note we do NOT use %0D, %0A etc. because PHP htmldecodes for us. */
-	$s = trim(preg_replace('/\s+/', ' ', $s));
-	if ('' == $s)
+	$query = trim(preg_replace('/\s+/', ' ', $query));
+	if ('' == $query)
 		exiterror('You are trying to search for nothing!');
 	
-	return $s;
+	if (in_array($strategy, array('standard', 'shortest', 'longest', 'traditional')))
+		if (! preg_match('/^\(\?\s*(\w+)\s*\)\s*/', $query))
+			$query = '(?' . $strategy . ') ' . $query;
+	/* note that we only prepend a match strategy option-setter if there is not one there already */
+	
+	return $query;
 }
 
 
@@ -113,9 +109,9 @@ function sqlise_integer_position($int_position)
 	{
 	case (0 == $ip):
 		return "node";
-	case (0 >  $ip):
-		return 'after' . abs($ip);
 	case (0 <  $ip):
+		return 'after' . abs($ip);
+	case (0 >  $ip):
 		return 'before' . abs($ip);
 	}
 }
@@ -134,12 +130,11 @@ function stringise_integer_position($int_position)
 	if ($ip == 0)
 		return "at the node";
 	
-	$sign = ($ip < 0 ? -1 : 1);	
 	
 	if ($Corpus->main_script_is_r2l)
-		return abs($ip) . ($sign == -1 ? ' before the node' : ' after the node');
+		return abs($ip) . ($ip < 0 ? ' before the node' : ' after the node');
 	else
-		return abs($ip) . ($sign == -1 ?  ' to the Left' : ' to the Right'); 
+		return abs($ip) . ($ip < 0 ? ' to the Left' : ' to the Right'); 
 }
 
 
@@ -173,6 +168,29 @@ function max_hits_when_restricted($tokens_in_corpus_or_section)
 
 
 
+/**
+ * Returns arrays of "extra code" files for the active global $Corpus,
+ * in a format ready to be passed to print_html_header().
+ * 
+ * @param  string $mode  Either "conc" or "context" (to get the right set of files).
+ * @param  string $type  Either "js" or "css" (to specify what type of files to get).
+ * @return array         Array for use as 3rd (if $mode==js) or 4th (if $mode=css)
+ *                       argument to  print_html_header(), q.v.
+ */
+function extra_code_files_for_concord_header($mode, $type)
+{
+	global $Corpus;
+	
+	/* these funcs render the list of extra code files in an appropriate way for print_html_header() */
+	$callback = array(
+		'js'  => function ($s){return str_replace('.js', '', $s);} ,
+		'css' => function ($s){return "../css/$s";}
+		);
+
+	$field = 'visualise_'.$mode.'_extra_'.$type;
+	
+	return array_map($callback[$type], preg_split('/~/', $Corpus->$field, -1, PREG_SPLIT_NO_EMPTY));
+}
 
 
 
@@ -194,151 +212,224 @@ function format_time_string($time_taken, $not_from_cache = true)
 /**
  * Builds HTML of concordance screen control row. Cache record needed for forms.  
  * 
- * @param QueryRecord $cache_record
+ * Configuration parameters should be passed in with an associative array.
+ * Here's the list of possible parameters:
+ * 
+ * program - version of the concordance display we are using
+ * page_no - page in the concordance
+ * per_page - how many hits per page
+ * num_of_pages - how many pages there are
+ * view_mode - the view mode we are currently using (for the kwic/line switcher, which will offer the other option) 
+ * alignment_att - if an alignment is currently being shown, this should contain its a-attribute
+ * align_info - array of alignemnt info from the DB.
+ * 
+ * @param  QueryRecord $cache_record        The query we are rendering. 
+ * @param  array       $control_row_config  Associative array of configuration variables.
+ * 
+ * @return string                           Printable HTML.
  */
-function print_control_row($cache_record)
+function print_control_row($cache_record, $control_row_config)
 {
-	// TODO ugh globals. two down, but get rid of rest when poss.
-// 	global $qname;
-	global $page_no;
-	global $per_page;
-	global $num_of_pages;
-	global $reverseViewMode;
-	global $reverseViewButtonText;
-	
-// 	global $postprocess;
-	global $program;
-	
 	global $Corpus;
+	
+	/* harvest vars from control_mode_config */
+	
+	$program = NULL;
+	
+	$page_no = NULL;
+	$per_page = NULL;
+	$num_of_pages = NULL;
 
+	$view_mode = NULL;
+	
+	$align_info = NULL;
+	$alignment_att = NULL;
+	
+	foreach (array('program', 'page_no', 'per_page', 'num_of_pages', 'view_mode', 'alignment_att', 'align_info') as $curr_var)
+		if (isset($control_row_config[$curr_var]))
+			$$curr_var = $control_row_config[$curr_var];
+	/* note they should all always be set. The isset is a bit paranoid here. */
+	
+	
+	/* certain controls have a set % width. If we need an extra cell for an alignment control, then that needs to be smaller. */
+	$button_cell_width = (empty($align_info) ? '20%' : '15%');
+	
+	
+	
+	
 	/* this is the variable to which everything is printed */
 	$final_string = '<tr>';
-
-
-	/* ----------------------------------------- *
-	 * first, create backards-and-forwards-links *
-	 * ----------------------------------------- */
 	
-	$marker = array( 'first' => '|&lt;', 'prev' => '&lt;&lt;', 'next' => "&gt;&gt;", 'last' => "&gt;|" );
 	
-	/* work out page numbers */
-	$nav_page_no['first'] = ($page_no == 1 ? 0 : 1);
-	$nav_page_no['prev']  = $page_no - 1;
-	$nav_page_no['next']  = ($num_of_pages == $page_no ? 0 : $page_no + 1);
-	$nav_page_no['last']  = ($num_of_pages == $page_no ? 0 : $num_of_pages);
-	/* all page numbers that should be dead links are now set to zero  */
-	
-
-	foreach ($marker as $key => $m)
+	/* ------------------------------------------------------------------------------------------ *
+	 * SHORT CIRCUIT: omit everything except the "further actions" tool iff count_hits_then_cease *
+	 * ------------------------------------------------------------------------------------------ */
+	if ('count_hits_then_cease' != $program)
 	{
-		$final_string .= '<td align="center" class="concordgrey"><b><a class="page_nav_links" ';
-		$n = $nav_page_no[$key];
-		if ( $n != 0 )
-			/* this should be an active link */
-			$final_string .= 'href="concordance.php?'
-				. url_printget(array(
-					array('uT', ''), array('pageNo', "$n"), array('qname', $cache_record->qname)
-					) )
-				. '&uT=y"';
-		$final_string .= ">$m</b></a></td>";
-	}
+		/* do the first 7 cells */
 
-	/* ----------------------------------------- *
-	 * end of create backards-and-forwards-links *
-	 * ----------------------------------------- */
-
-
-
-	/* --------------------- *
-	 * create show page form *
-	 * --------------------- */
-	$final_string .= "<form action=\"concordance.php\" method=\"get\"><td width=\"20%\" class=\"concordgrey\" nowrap=\"nowrap\">&nbsp;";
-	
-	$final_string .= '<input type="submit" value="Show Page:"/> &nbsp; ';
-	
-	$final_string .= '<input type="text" name="pageNo" value="1" size="8" />';
+		/* ----------------------------------------- *
+		 * first, create backards-and-forwards-links *
+		 * ----------------------------------------- */
 		
-	$final_string .= '&nbsp;</td>';
-
-	$final_string .= url_printinputs(array(
-		array('uT', ''), array('pageNo', ""), array('qname', $cache_record->qname)
-		));
-	
-	$final_string .= '<input type="hidden" name="uT" value="y"/></form>';
-	
-	
-	
-	/* ----------------------- *
-	 * create change view form *
-	 * ----------------------- */
-	if ($Corpus->visualise_translate_in_concordance)
-	{
-		$final_string .= "<td align=\"center\" width=\"20%\" class=\"concordgrey\" nowrap=\"nowrap\">No KWIC view available</td>";
-	}
-	else
-	{
-		$final_string .= "<form action=\"concordance.php\" method=\"get\"><td align=\"center\" width=\"20%\" class=\"concordgrey\" nowrap=\"nowrap\">&nbsp;";
+		$marker = array( 'first' => '|&lt;', 'prev' => '&lt;&lt;', 'next' => "&gt;&gt;", 'last' => "&gt;|" );
 		
-		$final_string .= "<input type=\"submit\" value=\"$reverseViewButtonText\"/>";
+		/* work out page numbers */
+		$nav_page_no['first'] = ($page_no == 1 ? 0 : 1);
+		$nav_page_no['prev']  = $page_no - 1;
+		$nav_page_no['next']  = ($num_of_pages == $page_no ? 0 : $page_no + 1);
+		$nav_page_no['last']  = ($num_of_pages == $page_no ? 0 : $num_of_pages);
+		/* all page numbers that should be dead links are now set to zero  */
+		
+	
+		foreach ($marker as $key => $m)
+		{
+			$final_string .= '<td nowrap="nowrap" align="center" class="concordgrey"><b><a class="page_nav_links" ';
+			$n = $nav_page_no[$key];
+			if ( $n != 0 )
+				/* this should be an active link */
+				$final_string .= 'href="concordance.php?'
+					. url_printget(array(
+						array('uT', ''), array('pageNo', "$n"), array('qname', $cache_record->qname)
+						) )
+					. '&uT=y"';
+			$final_string .= ">$m</b></a></td>";
+		}
+	
+		/* ----------------------------------------- *
+		 * end of create backards-and-forwards-links *
+		 * ----------------------------------------- */
+	
+	
+	
+		/* --------------------- *
+		 * create show page form *
+		 * --------------------- */
+		$final_string .= "<form action=\"concordance.php\" method=\"get\">"
+		
+			. "<td width=\"$button_cell_width\" class=\"concordgrey\" nowrap=\"nowrap\">&nbsp;"
+		
+			. '<input type="submit" value="Show Page:"/> &nbsp; '
+		
+			. '<input type="text" name="pageNo" value="1" size="8" />'
 			
-		$final_string .= '&nbsp;</td>';
-		
-		$final_string .= url_printinputs(array(
-			array('uT', ''), array('viewMode', "$reverseViewMode"), array('qname', $cache_record->qname)
-			));
-		
-		$final_string .= '<input type="hidden" name="uT" value="y"/>
-				</form>';
-	}
+			. '&nbsp;</td>'
 	
-
-
-	/* ----------------*
-	 * interrupt point *
-	 * --------------- */
-	if ($program == 'categorise')
-		/* return just with two empty cells */
-		return $final_string . '<td class="concordgrey" width="25%">&nbsp;</td> <td class="concordgrey" width="25%">&nbsp;</td></tr>';
-
-
-	/* ------------------------ *
-	 * create random order form *
-	 * ------------------------ */
-	if ($cache_record->last_postprocess_is_rand())
-	{
-		/* current display is randomised */
-		$newPostP_value = 'unrand';
-		$randomButtonText = 'Show in corpus order';
-	}
-	else
-	{
-		/* current display is not randomised */
-		$newPostP_value = 'rand';
-		$randomButtonText = 'Show in random order';
-	}
+			. url_printinputs(array(
+				array('uT', ''), array('pageNo', ""), array('qname', $cache_record->qname)
+				))
 		
-	$final_string .= "
-		<form action=\"concordance.php\" method=\"get\">
-			<td align=\"center\" width=\"20%\" class=\"concordgrey\" nowrap=\"nowrap\">
-				&nbsp;<input type=\"submit\" value=\"$randomButtonText\"/>&nbsp;
-			</td>
-			";	
+			. '<input type="hidden" name="uT" value="y"/></form>'
+					
+			;
+		
+		
+		
+		/* ----------------------- *
+		 * create change view form *
+		 * ----------------------- */
+		if ($Corpus->visualise_translate_in_concordance)
+			$final_string .= "<td align=\"center\" width=\"$button_cell_width\" class=\"concordgrey\" nowrap=\"nowrap\">No KWIC view available</td>";
+		else
+			$final_string .= "<form action=\"concordance.php\" method=\"get\">"
+			
+				. "<td align=\"center\" width=\"$button_cell_width\" class=\"concordgrey\" nowrap=\"nowrap\">&nbsp;"
+			
+				. "<input type=\"submit\" value=\"" 
+					. ($view_mode == 'kwic' ? 'Line View' : 'KWIC View') 
+					. "\"/>"
+					
+				
+				. '&nbsp;</td>'
+			
+				. url_printinputs(array(
+					array('uT', ''), array('viewMode', ($view_mode == 'kwic' ? 'line' : 'kwic')), array('qname', $cache_record->qname)
+					))
+			
+				. '<input type="hidden" name="uT" value="y"/></form>'
 
-	$final_string .= url_printinputs(array(
-		array('uT', ''), array('qname', $cache_record->qname), array('newPostP', $newPostP_value)
-		));
+				;
+	
+// old code: had to be doneas two separate ifs to avoid returning before we add the aligned-data view switcher.
+// 		if ($program == 'categorise')
+// 			/* return just with two empty cells */
+// 			return $final_string . '<td class="concordgrey" width="25%">&nbsp;</td> <td class="concordgrey" width="25%">&nbsp;</td></tr>';
+	
+	
+		/* ------------------------ *
+		 * create random order form *
+		 * ------------------------ */
+		if ($program == 'categorise')
+		{
+			/* don't gen the random order button */
+			$final_string .= '<td class="concordgrey" width="' . $button_cell_width . '">&nbsp;</td>';
+		}
+		else
+		{
+			if ($cache_record->last_postprocess_is_rand())
+			{
+				/* current display is randomised */
+				$newPostP_value = 'unrand';
+				$randomButtonText = 'Show in corpus order';
+			}
+			else
+			{
+				/* current display is not randomised */
+				$newPostP_value = 'rand';
+				$randomButtonText = 'Show in random order';
+			}
+				
+			$final_string .= "
+				<form action=\"concordance.php\" method=\"get\">
+					<td align=\"center\" width=\"$button_cell_width\" class=\"concordgrey\" nowrap=\"nowrap\">
+						&nbsp;<input type=\"submit\" value=\"$randomButtonText\"/>&nbsp;
+					</td>
+					";	
+		
+			$final_string .= url_printinputs(array(
+				array('uT', ''), array('qname', $cache_record->qname), array('newPostP', $newPostP_value)
+				));
+		
+			$final_string .= '
+							<input type="hidden" name="uT" value="y"/>
+				</form>
+				';
+		}
+		
+		
+		/* ---------------------------------------------- *
+		 * add switch-parallel-display form, if necessary *
+		 * ---------------------------------------------- */
+		if (! empty($align_info))
+			$final_string .= print_alignment_switcher('concordance', $cache_record->qname, $align_info, $alignment_att);
+	
+	} /* end if program not equal to count_hits_then_cease */
 
-	$final_string .= '
-					<input type="hidden" name="uT" value="y"/>
-		</form>
-		';
-
+	
+	
+	/* at this point, if program is categorise, all we need to do is add one more blank cell; && return. */
+	if ($program == 'categorise')
+	{
+		$final_string .= '<td class="concordgrey" width="' . $button_cell_width . '">&nbsp;</td></tr>';
+		return modify_control_row_for_categorise_check($final_string);
+	}
+	/* the categorise display does not have the standard action-control dropdown.
+	
+	
 
 	/* -------------------------- *
 	 * create action control form *
 	 * -------------------------- */
+	
+	/* if the program is count_hits_then_cease, we need to span 8 cols. */
+	$cell_decl = (
+		$program == 'count_hits_then_cease' 
+			? '<td align="center" class="concordgeneral" colspan="8" nowrap="nowrap">' 
+			: '<td class="concordgrey" nowrap="nowrap">'
+		);
 
 	$custom_options = '';
+	// TODO note the following is prob broken due to the failure of the plugin registry....
 	foreach (list_plugins_of_type(PLUGIN_TYPE_POSTPROCESSOR) as $record)
 	{
 		$obj = new $record->class($record->path);
@@ -347,7 +438,7 @@ function print_control_row($cache_record)
 		unset($obj);
 	}
 	
-	$final_string .= '<form action="redirect.php" method="get"><td class="concordgrey" nowrap="nowrap">&nbsp;
+	$final_string .= '<form action="redirect.php" method="get">' . $cell_decl . '&nbsp;
 		<select name="redirect">	
 			<option value="newQuery" selected="selected">New query</option>
 			<option value="thin">Thin...</option>
@@ -377,6 +468,51 @@ function print_control_row($cache_record)
 	return $final_string;
 }
 
+
+/**
+ * Returns an HTML form (dropdown, button) allowing choice of which parallel corpus to show.
+ * 
+ * @param  string $target_script  Either "context" or "concordance".
+ * @param  string $qname          Query name to use in the form info.
+ * @param  array  $align_info     Array of alignment handle/description pairs
+ * @param  string $current        Alignment currently being displayed. Any empty value = none showing.
+ * @return string                 HTML string; consists of a TD.
+ */
+function print_alignment_switcher($target_script, $qname, $align_info, $current)
+{
+	if (empty($current))
+		$opts = '<option value="" selected="selected">Select aligned data to display...</option>';
+	else
+		$opts = '<option value="">Hide all aligned text</option>';
+	
+	foreach ($align_info as $target => $desc)
+		$opts .= '<option value="' . $target . ($target == $current ? '" selected="selected">Showing' : '">Show') 
+			 . ' parallel corpus ' . escape_html($desc) .'</option>';
+
+	return "<form action=\"$target_script.php\" method=\"get\">"
+		. "<td align=\"center\" width=\"20%\" class=\"concordgrey\" nowrap=\"nowrap\">"
+		. "<select name=\"showAlign\">$opts</select>"
+		. "&nbsp;"
+		. "<input type=\"submit\" value=\"Switch\"/>"
+		. '</td>'
+		. url_printinputs(array(
+							array('showAlign', ''), array('uT', ''), array('qname', $qname)
+							))
+		. '<input type="hidden" name="uT" value="y"/></form>'
+		;
+}
+
+
+/**
+ * Alters a control row string so that all links / forms have the right classes to pick up the needed 
+ * JavaScript functions for "are you sure?" behaviour.
+ */
+function modify_control_row_for_categorise_check($control_row)
+{
+	/* the <a> all have class page_nav_links, so only the forms need changing;
+	 * worth having this hived off in a function though in case this gets more complex later.	 */ 
+	return str_replace('<form ', '<form class="unsaved_view_change" ', $control_row);
+}
 
 /**
  * Alters a control row string so that it contains the sort position in such a way
@@ -542,20 +678,25 @@ function print_sort_control($primary_annotation, $postprocess_string, &$sort_pos
 			<input type="hidden" name="newPostP" value="sort"/>
 			<input type="hidden" name="uT" value="y"/>
 		</form>
-	</tr>';
+	</tr>
+	';
 }
 
 
 
 
-/* creates the control bar at the bottom of "categorise" */
-
+/**
+ * Creates the control bar at the bottom of "categorise".
+ * 
+ * Since the whole screen is one big form, it DOES NOT contain any of the hidden inputs for the form.
+ * 
+ */
 function print_categorise_control()
 {
-	global $viewMode;
+	global $view_mode;
 	
 	$final_string = '<tr><td class="concordgrey" align="right" colspan="'
-		. ($viewMode == 'kwic' ? 6 : 4)
+		. ($view_mode == 'kwic' ? 6 : 4)
 		.'">
 			<select name="categoriseAction">
 				<option value="updateQueryAndLeave">Save values and leave categorisation mode</option>
@@ -576,8 +717,65 @@ function print_categorise_control()
 
 
 
+/**
+ * Processes a line of CQP output that is the "aligned" data for a concordance line,
+ * when we have an activated-for-display a-attribute.
+ * 
+ * The $display_params are the same as for print_concordance_line().
+ * 
+ * @see print_concordance_line
+ * @param string $cqp_line          A line of output from CQP.
+ * @param array  $display_params    An associative array of variables from the main script; explained in print_concordance_line.
+ * 
+ */
+function print_aligned_line($cqp_line, $display_params)
+{
+	/* we collect info about the target corpus of the alignment just once, as it does not vary */
+	static $cell_align = NULL;
+	static $target_bdo_begin = NULL;
+	static $target_bdo_end   = NULL;
+	static $tags_exist_in_aligned_cqp_output = NULL;
+	static $colspan = NULL;
+	static $cell_class = NULL;
+	
+	if (is_null($cell_align))
+	{
+		$target_info = get_corpus_info($display_params['alignment_att_to_show']);
+		$target_bdo_begin = ( $target_info->main_script_is_r2l ? '<bdo dir="ltr">' : '' ); 
+		$target_bdo_end   = ( $target_info->main_script_is_r2l ? '</bdo>' : '' ); 
+		$cell_align       = ( $target_info->main_script_is_r2l ? ' align="right"' : '' );
 
-
+		if ('kwic' == $display_params['view_mode'])
+		{
+			$colspan    = ' colspan="3"';
+			$cell_class = 'parallel-kwic';
+		}
+		else
+		{
+			$colspan    = '';
+			$cell_class = 'parallel-line';
+		}
+		/* does the target corpus have an annotation with the same handle as the source primary annotation? */
+		global $Corpus;
+		$tags_exist_in_aligned_cqp_output
+			= array_key_exists($Corpus->primary_annotation, get_corpus_annotations($display_params['alignment_att_to_show']));
+	}
+	
+	/* OK, build the line. First -- no text id or line number, cos if $show_align, then they are rowspan=2 
+	 * So we go straight to the one cell. */
+	
+	/* Remove leading flag of alignment att from commandlne CQP */
+	$line = preg_replace("/^-->{$display_params['alignment_att_to_show']}:\s/", '', $cqp_line);
+	
+	if ('(no alignment found)' != $line)
+	{
+		/* use the same extraction technique as for the main concordance line,
+		 * but inform the inner function using the $type" parameter. */
+		list($line) = concordance_line_blobprocess($line, $tags_exist_in_aligned_cqp_output ? 'aligned-tags' : 'aligned-notags', 100000);
+	}
+	
+	return "<td class=\"$cell_class\"$colspan$cell_align>$target_bdo_begin$line$target_bdo_end</td>\n";
+}
 
 
 
@@ -594,28 +792,51 @@ function print_categorise_control()
  * 
  * In certain display modes, these td's may have other smaller tables within them.
  * 
- * @param string $cqp_line			A line of output from CQP.
- * @param $position_table		    Not used.
- * @param int $line_number			The line number to be PRINTED (counted from 1)
- * @param int $highlight_position	The entry in left or right context to be highlit. 
- * 								    Set to a ridiculously large number (such as 10000000)
- * 								    to get no highlight.
- * @param bool $highlight_show_pos	Boolean: show the primary annotation of the highlit
- * 								    item in-line.  
+ * @param  string $cqp_line         A line of output from CQP.
+ * @param  array  $display_params   An associative array of variables from the main script about the query we are printing.
+ *                                  Contents as follows:
+ *                                  qname              => The query name (cache identifier) of the query - for context display link. Compulsory.
+ *                                  view_mode          => The mode to display (kwic or line). Compulsory.
+ *                                  line_number        => The line number to be PRINTED (counted from 1). Compulsory.
+ *                                  highlight_position => Integer offset indicating The entry in left or right context to be highlit. 
+ *                                                        If absent, no highlight. 
+ *                                  highlight_show_tag => Boolean: if true, show the primary annotation of the highlit item in-line. 
+ *                                                        If absent, false is assumed.
+ *                                  show_align         => Boolean: if true, we are in "show parallel corpus" mode, with parallel data
+ *                                                        included in the $cqp_line, and the alignment_att_to_show parameter included.
+ *                                  alignment_att_to_show  => String: handle of the target corpus that we are to display.  
  * @return string                   The built-up line.
  */
-function print_concordance_line($cqp_line, $position_table, $line_number, $highlight_position, $highlight_show_pos = false)
+// function print_concordance_line($cqp_line, $qname, $view_mode, $line_number, $highlight_position, $highlight_show_pos = false)
+function print_concordance_line($cqp_line, $display_params)
 {
-	global $qname;
-	global $viewMode;
-	// TODO weird use of globals.
-
 	global $Corpus;
+
+	/* harvest vars from display_params */
+	$qname              = $display_params['qname'];
+	$view_mode          = $display_params['view_mode'];
+	$line_number        = $display_params['line_number'];
+	$highlight_position = (isset($display_params['highlight_position']) ? $display_params['highlight_position'] : 100000) ;
+	/* nb re the above: setting highlight position to a superhigh number means we utilise NO HIGHLIGHT. */
+	$highlight_show_tag = (isset($display_params['highlight_show_tag']) ? (bool) $display_params['highlight_show_tag'] : false) ;
+	$show_align         = $display_params['show_align'];
+	$alignment_att_to_show = ($show_align ? $display_params['alignment_att_to_show'] : NULL);
+	
+	
+
+	/* note they should all always be set. The isset is a bit paranoid here. */
+	
+
+
 
 	/* get URL of the extra-context page right at the beginning, because we don't know when we may need it;
 	 * create as string that is easily embeddable into the <a> of the node-link (or empty string if not permitted) */
 	if (PRIVILEGE_TYPE_CORPUS_RESTRICTED < $Corpus->access_level)
-		$context_href = ' href="context.php?batch=' . ($line_number-1) . '&qname=' . $qname . '&uT=y" ';
+		$context_href = ' href="context.php?batch=' . ($line_number-1) 
+						. '&qname=' . $qname 
+						. ($show_align ? '&showAlign=' . $alignment_att_to_show : '') 
+						. '&uT=y" '
+						;
 	else
 		$context_href = '';
 		
@@ -625,6 +846,13 @@ function print_concordance_line($cqp_line, $position_table, $line_number, $highl
 		preg_match("/<{$Corpus->visualise_translate_s_att} (.*?)><text_id/", $cqp_line, $m);
 		$translation_content = $m[1];
 		$cqp_line = preg_replace("/<{$Corpus->visualise_translate_s_att} .*?><text_id/", '<text_id', $cqp_line);
+	}
+// 	else if ()
+	{
+//		reuse translation contetn formatting????????????????
+	
+// 		TODO
+// 		$translation_content
 	}
 
 	/* extract the text_id and delete that first bit of the line */
@@ -636,14 +864,14 @@ function print_concordance_line($cqp_line, $position_table, $line_number, $highl
 
 	/* left context string */
 	list($lc_string, $lc_tool_string) 
-		= concordance_line_blobprocess($kwic_lc, 'left', $highlight_position, $highlight_show_pos);
+		= concordance_line_blobprocess($kwic_lc, 'left', $highlight_position, $highlight_show_tag);
 
 	list($node_string, $node_tool_string) 
-		= concordance_line_blobprocess($kwic_match, 'node', $highlight_position, $highlight_show_pos, $context_href);
+		= concordance_line_blobprocess($kwic_match, 'node', $highlight_position, $highlight_show_tag, $context_href);
 
 	/* right context string */
 	list($rc_string, $rc_tool_string) 
-		= concordance_line_blobprocess($kwic_rc, 'right', $highlight_position, $highlight_show_pos);
+		= concordance_line_blobprocess($kwic_rc, 'right', $highlight_position, $highlight_show_tag);
 
 	/* if the corpus is r-to-l, this function call will spot it and handle things for us */
 	right_to_left_adjust($lc_string, $lc_tool_string, $node_string, $node_tool_string, $rc_string,$rc_tool_string); 
@@ -671,14 +899,18 @@ function print_concordance_line($cqp_line, $position_table, $line_number, $highl
 	}
 
 
-	/* print cell with line number */
-	$final_string = "<td class=\"text_id\"><b>$line_number</b></td>";
+	/* print cell with line number; then text_id (Across 2 rows iff we are displaying alignment data. */
+	$init_cells_rowspan = ( $show_align ? ' rowspan="2"' : '' );
 	
-	$final_string .= "<td class=\"text_id\"><a href=\"textmeta.php?text=$text_id&uT=y\" "
-		. metadata_tooltip($text_id) . '>' . $text_id . ($position_label === '' ? '' : " $position_label") . '</a></td>';
+	$final_string = "<td class=\"text_id\"$init_cells_rowspan><b>$line_number</b></td>";
+	
+	$final_string .= "<td class=\"text_id\"$init_cells_rowspan><a href=\"textmeta.php?text=$text_id&uT=y\" "
+		. metadata_tooltip($text_id) . '>' . $text_id . '</a>' 
+		. ($position_label === '' ? '' : ' <span class="concordposlabel">' . escape_html($position_label) . '</span>')
+		. '</td>';
 
 	
-	if ($viewMode == 'kwic')
+	if ($view_mode == 'kwic')
 	{
 		/* print three cells - kwic view */
 
@@ -722,11 +954,19 @@ function print_concordance_line($cqp_line, $position_table, $line_number, $highl
  * Note: we do not apply links here in normal mode, but if we are visualising
  * a gloss, then we have to (because the node gets buried in the table
  * otherwise). Thus $context_href must be passed in.
+ * 
+ * Possible values for "ype": left, node right; aligned-tags, aligned-notags.
  */
 function concordance_line_blobprocess($lineblob, $type, $highlight_position, $highlight_show_pos = false, $context_href = '')
 {
 	global $Corpus;
 	
+	static $xml_viz_index = NULL;
+	
+	/* set up the opaque xml visualisations on first call */
+	if (is_null($xml_viz_index))
+		$xml_viz_index = index_xml_visualisation_list(get_all_xml_visualisations($Corpus->name, true, false, false));
+
 	/* all string literals (other than empty strings or spacers) must be here so they can be conditionally set. */
 	if ($type == 'node')
 	{
@@ -755,10 +995,7 @@ function concordance_line_blobprocess($lineblob, $type, $highlight_position, $hi
 	
 	/* the "trim" is just in case of unwanted spaces (there will deffo be some on the left) ... */
 	/* this regular expression puts tokens in $m[4]; xml-tags-before in $m[1]; xml-tags-after in $m[5] . */
-	preg_match_all('|((<\S+?( \S+?)?>)*)([^ <]+)((</\S+?>)*) ?|', trim($lineblob), $m, PREG_PATTERN_ORDER);
-	/* note, this is prone to interference from literal < in the index.
-	 * TODO: 
-	 * Will be fixable when we have XML concordance output in CQP v 4.0 */
+	preg_match_all(CQP_INTERFACE_WORD_REGEX, trim($lineblob), $m, PREG_PATTERN_ORDER);
 	$token_array = $m[4];
 	$xml_before_array = $m[1];
 	$xml_after_array = $m[5];
@@ -776,15 +1013,16 @@ function concordance_line_blobprocess($lineblob, $type, $highlight_position, $hi
 	
 	for ($i = 0; $i < $n; $i++) 
 	{
-/* TODO replace with actual function to render the XML viz, rather than just HTML speciallchars */
-$xml_before_string = escape_html($xml_before_array[$i]) . ' ';
-$xml_after_string =  ' ' . escape_html($xml_after_array[$i]);
-		list($word, $tag) = extract_cqp_word_and_tag($token_array[$i]);
+		/* apply XML visualisations */
+		$xml_before_string = apply_xml_visualisations($xml_before_array[$i], $xml_viz_index) . ' ';
+		$xml_after_string  =  ' ' . apply_xml_visualisations($xml_after_array[$i], $xml_viz_index);
+
+		list($word, $tag) = extract_cqp_word_and_tag($token_array[$i], $Corpus->visualise_gloss_in_concordance, $type=='aligned-notags');
 
 		if ($type == 'left' && $i == 0 && preg_match('/\A[.,;:?\-!"]\Z/', $word))
 			/* don't show the first word of left context if it's just punctuation */
 			continue;
-	
+
 		if (!$Corpus->visualise_gloss_in_concordance)
 		{
 			/* the default case: we are buiilding a concordance line and a tooltip */
@@ -819,7 +1057,7 @@ $xml_after_string =  ' ' . escape_html($xml_after_array[$i]);
 	}
 	if ($main_string == '' && !$Corpus->visualise_gloss_in_concordance)
 		$main_string = '&nbsp;';
-	
+
 
 	/* extra step needed because otherwise a space may get linkified */
 	if ($type == 'node')
@@ -854,7 +1092,7 @@ function metadata_tooltip($text_id)
 		return "";
 	
 	$tt = 'onmouseover="return escape(\'Text <b>' . $text_id . '</b><BR>'
-		. '<i>(length = ' . number_format((float)$text_data['words']) 
+		. '<i>(length = ' . number_format((float)$text_data['words'], 0) 
 		. ' words)</i><BR>--------------------<BR>';
 	
 	while (false !== ($field_handle = mysql_fetch_row($result)) )
@@ -888,7 +1126,7 @@ function right_to_left_adjust(&$lc_string,   &$lc_tool_string,
                               &$rc_string,   &$rc_tool_string)
 {
 	global $Corpus;
-	global $viewMode;
+	global $view_mode;
 
 	if ($Corpus->main_script_is_r2l)
 	{
@@ -920,7 +1158,7 @@ function right_to_left_adjust(&$lc_string,   &$lc_tool_string,
 			/* we only need to worry in kwic. In line mode, the flow of the
 			 * text and the normal text-directionality systems in the browser
 			 * will deal wit it for us.*/
-			if ($viewMode == 'kwic')
+			if ($view_mode == 'kwic')
 			{
 				$temp_r2l_string = $lc_string;
 				$lc_string = $rc_string;
@@ -941,8 +1179,9 @@ function right_to_left_adjust(&$lc_string,   &$lc_tool_string,
 function build_glossbox($type, $line1, $line2, $line3 = false)
 {
 	global $Corpus;
-	global $viewMode;
-	if ($viewMode =='kwic')
+	global $view_mode;
+	
+	if ($view_mode =='kwic')
 	{
 		switch($type)
 		{
@@ -957,13 +1196,15 @@ function build_glossbox($type, $line1, $line2, $line3 = false)
 	if (empty($line1) && empty($line2))
 		return '';
 		
-	return 	'<table class="glossbox" align="' . $align . '"><tr>'
-			. $line1
-			. '</tr><tr>' 
-			. $line2
-			. '</tr>'
-			. ($line3 ? '' : '')
-			. '</table>';
+	return 	
+		'<table class="glossbox" align="' . $align . '"><tr>'
+		. $line1
+		. '</tr><tr>' 
+		. $line2
+		. '</tr>'
+		. ($line3 ? '' : '')
+		. '</table>'
+		;
 }
 
 function concordance_wrap_translationbox($concordance, $translation)
@@ -989,6 +1230,9 @@ function concordance_invert_tds($string)
 {
 	$stack = explode('</td>', $string);
 	
+// TODO would it not be MUCH more efficient to use http://php.net/array_reverse and then implode??
+// empty elements can be excluded using a built-in, surely?
+	
 	$newstring = '';
 	
 	while (! is_null($popped = array_pop($stack)))
@@ -1007,49 +1251,61 @@ function concordance_invert_tds($string)
 
 
 /**
- * Function used by print_concordance_line. 
- * 
- * Also used in context.inc.php.
+ * Function used by print_concordance_line, and also to print the sole concordance
+ * line in context.inc.php.
  * 
  * It takes a single word/tag string from the CQP concordance line, and
- * returns an array of 0 => word, 1 => tag 
+ * returns a array of printable word + printable tag.
  * 
- * TODO important design problem in this function: it always uses 
- * the visualise_gloss_in_concordance variable for the active corpus,
- * when in fact visualise_gloss_in_context should be used in context.inc.php
- * So a rethink, to some degree, is needed to fix this.
+ * The second arg determines whether or not we give the primary annotation 
+ * according to the requirements of gloss-visualisation mode. This arg
+ * should be either $Corpus->visualise_gloss_in_concordance
+ * or $Corpus->visualise_gloss_in_context depending on which script is calling.
  * 
- * note also it uses globals .... so is fundamentally a dirty hack just on that basis!!!
+ * The third arg, if true, disables word-and-tag extraction for parallel data 
+ * that do not have the same annotation p-attribute of the main corpus
  * 
+ * @param  string $cqp_source_string        A string, containing one "word/tag" pair from a CQP concordance.
+ *                                          (or, potentially, just-a-word if there is neither a primary 
+ *                                          nor a gloss annotation). The word 
+ * @param  bool   $gloss_visualisation      If true, the tag doesn't have a prepresnded '_' when returned.
+ * @param  bool   $disable_tag_for_aligned  If true, we are extracting a parallel-corpus printout
+ *                                          that lacks the tag that is printed for the main-corpus;
+ *                                          so for this call only, we override into just-a-word mode. 
+ * @return array                            Numeric w/ indexes 0 => word, 1 => tag; the word is HTML-escaped, 
+ *                                          the tag is HTML-escaped *And* has a '_' prepended (usually: see above).
+ *                                          If we're in just-a-word mode, the tag is always an empty string. 
  */
-function extract_cqp_word_and_tag($cqp_source_string)
+function extract_cqp_word_and_tag($cqp_source_string, $gloss_visualisation = false, $disable_tag_for_aligned = false)
 {
+// TODO, second argument seems not to be used. A corpus-wide setting is used below.
+// PRobably I was ahlfway through changingn it, but to which? To use of the $Corpus object, or to an argument?? 
 	global $Corpus;
 	
-	static $word_extraction_pattern = NULL;
+	/* we know this bool is worked out once and for all for all non-parallel words, so LET'S PREMATURELY OPTIMISE */
+	static $word_and_tag_present = NULL;
 	
-	if (is_null($word_extraction_pattern))
+	/* on the first call only: only deduce the pattern once per run of the script */
+	if (is_null($word_and_tag_present))
 	{ 
-		/* on the first call only: only deduce the pattern once per run of the script */
-		global $primary_tag_handle;
-		
 		/* OK, this is how it works: if EITHER a primary tag is set, OR we are visualising 
 		 * glosses, then we must split the token into word and tag using a regex.
 		 * 
-		 * If NEITHER of these things is the case, then we don't use a regex.
+		 * If NEITHER of these things is the case, then we assume the whole thing we've been passed is a word.
 		 * 
-		 * Note that we assume that forward slash can be part of a word, but not part of a 
-		 * (primary) tag.
-		 * 
+		 * Note that we assume that forward slash can be part of a word, but not part of a (primary) tag.
 		 * [TODO: note this in the manual] 
 		 */
-		$word_extraction_pattern = 
-			( (empty($primary_tag_handle)&&!$Corpus->visualise_gloss_in_concordance) ? false : '/\A(.*)\/([^\/]*)\z/' );
+		if (empty($Corpus->primary_annotation) && !$Corpus->visualise_gloss_in_concordance)
+			$word_and_tag_present = false;
+		else
+			$word_and_tag_present = true;
 	}
 	
-	if ($word_extraction_pattern)
+	if ($word_and_tag_present && !$disable_tag_for_aligned)
 	{
-		preg_match($word_extraction_pattern, escape_html($cqp_source_string), $m);
+		preg_match(CQP_INTERFACE_EXTRACT_TAG_REGEX, escape_html($cqp_source_string), $m);
+		
 		if (!isset($m[1], $m[2]))
 		{
 			/* a fallback case, for if the regular expression is derailed;
@@ -1066,6 +1322,7 @@ function extract_cqp_word_and_tag($cqp_source_string)
 	}
 	else
 	{
+		// TODO work out why I have escape_html here, but not in the instance above. 
 		$word = escape_html($cqp_source_string);
 		$tag = '';
 	}
@@ -1096,7 +1353,7 @@ function extract_cqp_line_position_labels(&$cqp_line, &$text_id, &$position_labe
 		}
 		else
 		{
-			/* Position label could not be extracted, sojust extract text_id */
+			/* Position label could not be extracted, so just extract text_id */
 			preg_match("/\A\s*\d+: <text_id (\w+)><$Corpus->visualise_position_label_attribute>:/", $cqp_line, $m);
 			$text_id = $m[1];
 			$position_label = '';

@@ -281,8 +281,8 @@ function printquery_history()
 		default:
 			if ($qs->type == QueryScope::TYPE_SUBCORPUS)	
 			{
-				if (! (QueryScope::$DELETED_SUBCORPUS == $qs->serialise()))
-					echo '<td class="concordgeneral">', $row['hits'] , '</td>';
+				if (QueryScope::$DELETED_SUBCORPUS == $qs->serialise())
+					echo '<td class="concordgeneral" align="center">', $row['hits'] , '</td>';
 				else
 					echo "<td class='concordgeneral' align='center'><a href=\"concordance.php?"
 						, "theData=" , urlencode($row['cqp_query']) 
@@ -541,6 +541,8 @@ function printquery_catqueries()
 		</tr>
 
 	<?php
+	
+	$n_columns = ($usercolumn ? 8 : 7);
 
 	$toplimit = $begin_at + $per_page;
 	$alt_toplimit = mysql_num_rows($result);
@@ -549,6 +551,11 @@ function printquery_catqueries()
 		$toplimit = $alt_toplimit + 1;
 	
 
+
+	if (empty($catqueries_to_show))
+		echo "<tr>\n<td class='concordgrey' colspan='$n_columns' align='center'><p>You have no categorised queries for this corpus.</p></td></tr>";
+	
+	
 	for ( $i = 1 ; $i < $toplimit ; $i++ )
 	{
 		if (!isset($catqueries_to_show[$i]))
@@ -919,6 +926,7 @@ function printquery_analysecorpus()
 		return;
 	}
 	
+	global $Config;
 	global $Corpus;
 	global $User;
 	
@@ -936,6 +944,19 @@ function printquery_analysecorpus()
 				This page contains controls for advanced corpus analysis functions.
 				<b>WARNING</b>: currently under development. You have been warned.
 				<br>&nbsp;
+				<?php 
+				if (!$Config->hide_experimental_features)
+				{
+					// temp link
+					// when well developed, will be an optioon on the proper "analyse corpus" menu below.
+					?>
+					&nbsp;<br>
+					<center><a href="index.php?thisQ=lgcurve&uT=y">Click here for the experimental Closure Curve tool</a>.</center>
+					<br>&nbsp;
+					<?php 
+					// dropdown may need to be "redirect" ratrher than a jQuery gubbins??? we'll see
+				}
+				?>
 			</td>
 		</tr>
 		<tr>
@@ -1235,16 +1256,179 @@ function printquery_analysecorpus()
 }
 
 
+// TODO this doesn't really seem to belong in this file. the matrix ones do cos they used save Qs, but not this. Recosnider correct module!
+// TODO more fruity treats needed in this display.
+function printquery_lgcurve()
+{
+	global $Corpus;
+	global $Config;
+global $User;
+
+	if ($Config->hide_experimental_features)
+		exiterror("lgcurves are an experimental feature, disabled in your system.");
+	
+	// TODO 
+	?>
+	<table class="concordtable" width="100%">
+		<tr>
+			<th class="concordtable" colspan="9">Leexical Growth Curve Tool</th>
+		</tr>
+		<tr>
+			<td class="concorderror" colspan="9">
+				&nbsp;<br>
+				<b>WARNING</b> - Lexical Growth Curves are currently <u>experimental</u>.
+				<br>&nbsp;
+			</td>
+		</tr>
+		<tr>
+			<th class="concordtable" colspan="9">Lexical growth curves currently stored on the system</th>
+		</tr>
+		<tr>
+			<th class="concordtable">ID</th>
+			<th class="concordtable">Annotation</th>
+			<th class="concordtable">Token-interval width</th>
+			<th class="concordtable">No. of datapoints</th>
+			<th class="concordtable">Date created</th>
+			<th class="concordtable">Time taken</th>
+			<th class="concordtable" colspan="3">Actions</th>
+						
+		</tr>
+		
+		
+		<?php
+		// TODO might be a better way to do this than with global $User,e.g.permissions?
+		global $User;
+		
+		$lgc_list = list_corpus_lgcurves($Corpus->name);
+		
+		if (empty($lgc_list))
+			echo "\n\t\t<tr><td class=\"concordgrey\" colspan=\"8\">Currently no Closure Curve data exists for this corpus.</td></tr>";
+		
+		foreach ($lgc_list as $lgcurve)
+			echo "\n\t\t<tr>"
+				, "\n\t\t\t<td class=\"concordgrey\">" , $lgcurve->id , "</td>"
+				, "\n\t\t\t<td class=\"concordgeneral\">" , $lgcurve->annotation , "</td>"
+				, "\n\t\t\t<td class=\"concordgeneral\">" , number_format($lgcurve->interval_width), "</td>"
+				, "\n\t\t\t<td class=\"concordgeneral\">" , $lgcurve->n_datapoints , "</td>"
+				, "\n\t\t\t<td class=\"concordgeneral\">" , date(CQPWEB_UI_DATE_FORMAT, $lgcurve->create_time), "</td>"
+				, "\n\t\t\t<td class=\"concordgeneral\">" , number_format($lgcurve->create_duration), " s</td>"
+				, "\n\t\t\t<td class=\"concordgeneral\" align=\"center\">" 
+					, '<a class="menuItem" href="lgcurve-admin.php?lgAction=download&lgcurve=', $lgcurve->id, '&uT=y">[Download]</a></td>'
+				, "\n\t\t\t<td class=\"concordgeneral\" align=\"center\">"
+					, '<a class="menuItem" href="dataviz.php?viz=lgc&curves=', $lgcurve->id, '&uT=y">[Plot graph]</a></td>'
+				, "\n\t\t\t<td class=\"concordgeneral\" align=\"center\">"
+					// TODO this DEFINETILY needs "are you sure? modal dialog protection jQuery stuff./
+					, ($User->is_admin() 
+						? '<a class="menuItem" href="lgcurve-admin.php?lgAction=delete&lgcToDelete=' . $lgcurve->id . '&uT=y">[Delete]</a></td>' 
+						: '&nbsp;</td>') 
+				, "\n\t\t</tr>"
+				;
+		
+		?>
+	</table>
+	
+	<table class="concordtable" width="100%">
+		<tr>
+			<th class="concordtable" colspan="2">Generate new Closure Curve data</th>
+		</tr>
+		<tr>
+			<td class="concordgrey" colspan="2">
+				<p class="spacer">&nbsp;</p>
+				<p>
+					To generate a closure curve, pick which annotation you wish to apply it to (by default: just words),
+					and the token interval at which you want to plot the number of cumulative types overserved.
+				</p>
+				<p>
+					If you request a closure curve with the same annotation and interval as one which already exists,
+					it will <b>not</b> be recreated.
+				</p>
+				<p class="spacer">&nbsp;</p>
+			</td>
+		</tr>
+		<?php 
+		// TODO TODO!!!
+		//this prob needs to throw up a protective jQuery screen as this will take AGES 
+		
+		?>
+		<form action="lgcurve-admin.php" method="get">
+			<tr>
+				<td class="concordgrey">Select the annotation on which to build a closure curve:</td>
+				<td class="concordgeneral" width="50%">
+					<select name="annotation">
+						<option value="word" selected="selected">Word</option>
+						<?php
+						foreach (get_corpus_annotation_info($Corpus->name) as $att)
+							echo "\n\t\t\t\t\t\t<option value=\"", $att->handle, '">', escape_html($att->description), '</option>';
+						?>
+					</select>
+				</td>
+			</tr>
+			<tr>
+				<td class="concordgrey">Select your preferred interval (a good value is 1 thousandth the size of the corpus)</td>
+				<td class="concordgeneral" width="50%">
+					<select name="intervalWidth">
+						<?php
+						/* nb. this setup is a bit shonky, mgiht need a tidy later. */
+						$int_values = array(1000, 10000, 50000, 100000, 500000, 1000000, 5000000, 10000000);
+						$preselected = 1000;
+						
+						/* we don't need to worry about rounding here, we are just trying to pick one on roughly the right order of magnitude. */
+						while ($Corpus->size_tokens/$preselected > 2000.0)
+							$preselected *= 10;
+						/* e.g. if corpus is 2 billion, this will lead to 1,000,000 (2 thousand points) */
+						
+						foreach($int_values as $v)
+							echo "\n\t\t\t\t\t\t<option value=\""
+ 								, $v
+								, ($preselected == $v ? '" selected="selected">': '">')
+								, number_format($v)
+								, '</option>'
+ 								;
+						?>
+					</select>
+				</td>
+			</tr>
+			<tr>
+				<td class="concordgeneral" colspan="2">
+					<p class="spacer">&nbsp;</p>
+					<p align="center">
+						<input type="submit" value="Generate closure curve data!" />
+					</p>
+					<p class="spacer">&nbsp;</p>
+				</td>
+			</tr>
+			<input type="hidden" name="lgAction" value="generate" />
+			<input type="hidden" name="uT" value="y" />
+		</form>
+	</table>
+	
+	
+	<?php 
+}
+
+
 
 
 
 
 function printquery_uploadquery()
 {
+	global $User;
+	
+	$superuser_limit_msg = "(As a superuser, you are not actually restricted by this limit, but only by any limits in your webserver configuation.)\n"
+	
 	?>
 	<table class="concordtable" width="100%">
 		<tr>
 			<th colspan="2" class="concordtable">Upload a query from an external data file</th>
+		</tr>
+		<tr>
+			<td colspan="2" class="concordgeneral" align="center">
+				&nbsp;<br/>
+				You can upload files up to <?php echo number_format($User->max_upload_file()/(1024.0*1024.0), 1); ?> MB in size. 
+				<?php if ($User->is_admin()) echo $superuser_limit_msg; ?>
+				<br/>&nbsp;
+			</td>
 		</tr>
 		<form action="upload-query.php" method="POST" enctype="multipart/form-data">
 			<tr>
@@ -1259,6 +1443,30 @@ function printquery_uploadquery()
 					<br/>&nbsp;
 				</td>
 			</tr>
+			<?php 
+			if ($User->has_cqp_binary_privilege())
+			{
+				?>
+				<tr>
+					<td class="concordgrey">
+						&nbsp;<br/>
+						Select type of upload:
+						<br/>&nbsp;
+					</td>
+					<td class="concordgeneral">
+						&nbsp;<br/>
+						<input type="radio" id="uploadBinary0" name="uploadBinary" value="0" checked="checked"/>
+						<label for="uploadBinary0">Normal upload (text file containing corpus positions)</label>
+						<br/>
+						<input type="radio" id="uploadBinary1" name="uploadBinary" value="1"/>
+						<label for="uploadBinary1">Binary upload (reinsertion of a previously-exported CQP query data file)</label>
+						<br/>&nbsp;
+					</td>
+				</tr>
+				<?php 
+			}
+			?>
+			
 			<tr>
 				<td class="concordgrey">
 					&nbsp;<br/>
@@ -1278,11 +1486,12 @@ function printquery_uploadquery()
 					<br/>&nbsp;
 				</td>
 			</tr>
+			<?php echo ($User->has_cqp_binary_privilege() ? '' : '<input type="hidden" name="uploadBinary" value="0" />'), "\n"; ?>			
 			<input type="hidden" name="uT" value="y" />			
 		</form>
 		<tr>
 			<td colspan="2" class="concordgrey">
-				<strong>Instructions:</strong>
+				<strong>Instructions<?php if ($User->has_cqp_binary_privilege()) echo ' for normal (text) uploads'; ?></strong>
 				<ul>
 					<li>You can use this page to upload a file to CQPweb and create a new saved query from it.</li>
 					<li>The file must contain (only) two columns of corpus positions, separated by tabs.</li>
@@ -1297,10 +1506,40 @@ function printquery_uploadquery()
 						character ("_"); it cannot contain any spaces.
 					</li>
 				</ul>
+				
+				<?php 
+				
+				if ($User->has_cqp_binary_privilege())
+				{
+					?>
+					
+					<strong>Extra instructions for binary uploads</strong>
+					<ul>
+						<li>
+							As per above, your query will be created within the current corpus,
+							and the name you give for the saved query must follow the same rules.
+						</li>
+						<li>
+							The file must be an archived CQP binary data file that you previously
+							exported from one of your saved queries (in this corpus).
+						</li>
+						<li>
+							If you have modified the file in any way, or if you attempt to upload
+							a query that you exported from a different CQPweb server (or a different
+							corpus on this server), you will generate corrupt data with unpredictable
+							&ndash; but certainly incorrect &ndash; results. So <b>don't do that</b>.
+						</li>
+					</ul>
+					
+					<?php 
+				}
+				?>
+				
 			</td>
 		</tr>
 	</table>
 	<?php
+	
 	/* TODO it will be pretty easy to upload a subcorpus through another form here,
 	 * with relatively minor tweaks only to the code (parameterisable!) ? */
 }
@@ -1331,6 +1570,10 @@ function print_cache_table($begin_at, $per_page, $user_to_show = NULL, $show_uns
 		$sql .= " and saved != " . CACHE_STATUS_CATEGORISED;
 	
 	$sql .= ' order by time_of_query DESC';
+	
+	$actions_colspan = 1;
+	if ($User->has_cqp_binary_privilege())
+		$actions_colspan++;
 
 	/* only allow superusers to see file size */		
 	if (!$User->is_admin())
@@ -1348,7 +1591,7 @@ function print_cache_table($begin_at, $per_page, $user_to_show = NULL, $show_uns
 			<th class="concordtable">No. of hits</th>
 			' . ($show_filesize ? '<th class="concordtable">File size</th>' : '') . '
 			<th class="concordtable">Date</th>
-			<th class="concordtable">Rename</th>
+			<th class="concordtable" colspan="' . $actions_colspan .'">Actions</th>
 			<th class="concordtable">Delete</th>	
 		</tr>
 	';
@@ -1393,17 +1636,25 @@ function print_cache_table($begin_at, $per_page, $user_to_show = NULL, $show_uns
 		$temp_gets = url_printget(array(array('redirect', ''), array('saveScriptmode', ''), array('qname', '')));
 		
 		if ($qr->saved == CACHE_STATUS_SAVED_BY_USER)
+		{
 			$s .= '<td class="concordgeneral"><center>' 
 				. '<a class="menuItem" href="redirect.php?redirect=saveHits&saveScriptMode=get_save_rename&qname='
 				. $qr->qname . '&' . $temp_gets . '" onmouseover="return escape(\'Rename this saved query\')">'
-				. '[rename]</a></center></td>'
+				. '[Rename]</a></center></td>'
 				;
+			if ($User->has_cqp_binary_privilege())
+				$s .= '<td class="concordgeneral"><center>' 
+					. '<a class="menuItem" href="redirect.php?redirect=saveHits&saveScriptMode=binary_export&qname='
+					. $qr->qname . '&uT=y" onmouseover="return escape(\'Download the raw CQP binary file for this query\')">'
+					. '[Export datafile]</a></center></td>'
+					;	
+		}
 		else
 			$s .= '<td class="concordgeneral"><center>-</center></td>';
 
 		$s .= '<td class="concordgeneral"><center>' 
 			. '<a class="menuItem" href="redirect.php?redirect=saveHits&saveScriptMode=delete_saved&qname='
-			. $qr->qname . '&' . $temp_gets . '" onmouseover="return escape(\'Delete this saved query\')">'
+			. $qr->qname . '&uT=y" onmouseover="return escape(\'Delete this saved query\')">'
 			. '[x]</a></center></td>'
 			;
 		$s .= '</tr>

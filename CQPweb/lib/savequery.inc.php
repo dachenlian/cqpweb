@@ -36,6 +36,10 @@
 
 
 
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
+
 
 /* include defaults and settings */
 require('../lib/environment.inc.php');
@@ -44,6 +48,7 @@ require('../lib/environment.inc.php');
 /* include function files */
 require('../lib/html-lib.inc.php');
 include('../lib/cache.inc.php');
+include('../lib/xml.inc.php');
 include('../lib/subcorpus.inc.php');
 include('../lib/concordance-lib.inc.php');
 include('../lib/library.inc.php');
@@ -54,18 +59,69 @@ include('../lib/exiterror.inc.php');
 cqpweb_startup_environment(CQPWEB_STARTUP_DONT_CONNECT_CQP );
 
 
-$qname = safe_qname_from_get();
-
-
 if (!isset($_GET['saveScriptMode']))
 	$this_script_mode = 'get_save_name';
 else
 	$this_script_mode = $_GET['saveScriptMode'];
 
+$qname = safe_qname_from_get();
+
+if (! check_cached_query($qname))
+	$this_script_mode = 'query_name_error';
 
 
 switch ($this_script_mode)
 {
+case 'query_name_error':
+	print_savename_top();
+		
+
+	
+	?>
+	<table class="concordtable" width="100%">
+		<tr>
+			<th class="concordtable">Save Query: Error message</th>
+		</tr>
+		<tr>
+			<td class="concorderror">
+				<p class="errormessage">
+					CQPweb cannot complete your save-query request
+					because the query you are trying to save 
+					no longer exists in CQPweb's memory.
+				</p>
+				<p class="errormessage">
+					Please try running the query again  
+					(from <a href="index.php?thisQ=history&uT=y"></a>your Query History</a>)
+					and then saving the query from there. 
+				</p>
+				<p class="errormessage">
+					If you get this error message repeatedly, you should report it
+					to your server&rsquo;s system administrator.
+					<?php
+					if (! empty($Config->server_admin_email_address))
+						echo "\n\t\t\t\t</p>\n\t\t\t\t"
+							, '<p class="errormessage">Your server administrator\'s contact email address is: <b>'
+							, $Config->server_admin_email_address
+							, "</b>.</p>\n"
+							;
+					else
+						echo "\n";
+					?>
+				</p>
+			</td>
+		</tr>
+
+	</table>
+	
+	<?php
+	
+	echo print_html_footer('savequery');
+	cqpweb_shutdown_environment();
+	exit();
+
+
+
+
 case 'save_error':
 
 	print_savename_top();
@@ -80,8 +136,8 @@ case 'save_error':
 				<?php
 				if (isset($_GET['saveScriptNameExists']))
 				{
-					$n = mysql_real_escape_string($_GET['saveScriptNameExists']);
-					echo "A query called <strong>$n</strong> has already been saved. Please specify a different name.
+					$n_words = escape_html($_GET['saveScriptNameExists']);
+					echo "A query called <strong>$n_words</strong> has already been saved. Please specify a different name.
 								<br/>&nbsp;<br/>";
 				}
 				?>
@@ -197,6 +253,7 @@ case 'get_save_rename':
 	exit();
 
 
+
 case 'rename_saved':
 
 	if(!isset($_GET['saveScriptSaveReplacementName']))
@@ -219,7 +276,7 @@ case 'rename_saved':
 		$record->save();
 	}
 	else
-		exiterror("cache record for the specified query ($qname) couold not be found.");
+		exiterror("cache record for the specified query ($qname) could not be found.");
 
 	$url = 'index.php?'
 		. url_printget(array(array('theData', ''), array('redirect', ''), array('saveScriptSaveReplacementName', ''), array('saveScriptMode', '')));
@@ -238,6 +295,36 @@ case 'delete_saved':
 	cqpweb_shutdown_environment();
 	header('Location: ' . url_absolutify($url));
 	exit();
+
+
+
+
+
+case 'binary_export':
+	
+	if (false === ($record = QueryRecord::new_from_qname($qname)))
+		exiterror("No record could be found of the query you specified.");
+	if (CACHE_STATUS_SAVED_BY_USER != $record->saved || ( ! $User->is_admin() && $User->username != $record->user) )
+		exiterror("You can only download your own saved queries.");
+	if (! $User->has_cqp_binary_privilege())
+		exiterror("You do not have permission to access CQP binary files.");
+	
+	/* work out the binary filename to read from */
+	if (false === ($path = cqp_file_path($qname)))
+		exiterror("The requested CQP binary file could not be found on the system. ");
+	
+	/* out binary filename to send as ($corpus.$savename.cqpquery) */
+	$send_name = $Corpus->name . '.' . $record->save_name . '.cqpquery';
+
+	/* Send the file to browser */
+	header('Content-Type: application/octet-stream');
+	header('Content-Disposition: attachment; filename="' . $send_name . '"');
+	readfile($path);
+	
+	cqpweb_shutdown_environment();
+	exit();
+
+
 
 
 

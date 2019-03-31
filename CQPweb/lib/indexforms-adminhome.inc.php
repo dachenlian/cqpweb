@@ -35,123 +35,171 @@
 
 function printquery_showcorpora()
 {
+	global $Config;
+	
 	?>
 	<table class="concordtable" width="100%">
 		<tr>
-			<th class="concordtable" colspan="6">Showing list of currently installed corpora</th>
+			<th class="concordtable" colspan="8">Showing currently installed corpora</th>
 		</tr>
-		<!-- 
 		<tr>
-			<td class="concordgrey" colspan="8">
-				&nbsp;<br/>
-				<em>Visible</em> means the corpus is accessible through the main menu. Invisible
-				corpora can still be accessed by direct URL entry by people who know the web address.
-				<br/>&nbsp;
-			</td>
-		</tr>
-		-->
-		<tr>
-			<th class="concordtable">Corpus</th>
-			<th class="concordtable">Indexing date</th>
-			<th class="concordtable">Size (tokens)</th>
+			<th class="concordtable" rowspan="2">Corpus</th>
+			<th class="concordtable" rowspan="2">Indexing date</th>
+			<th class="concordtable" colspan="3">Size</th>
+			<th class="concordtable" colspan="2">Disk space</th>
 			<!--
-			<th class="concordtable" colspan="2">Visibility</th>
 			<th class="concordtable" colspan="3">Manage...</th>
-			<th class="concordtable" colspan="2">Actions</th>
 			-->
-			<th class="concordtable">Actions</th>
+			<th class="concordtable" rowspan="2">Actions</th>
+		</tr>
+		<tr>
+			<th class="concordtable">Tokens</th>
+			<th class="concordtable">Types</th>
+			<th class="concordtable">Texts</th>
+			<th class="concordtable">Indexes</th>
+			<th class="concordtable">Freq tables</th>
 		</tr>
 	<?php
 	
+	$mb_div = 1024.0 * 1024.0;
+	$total_index_size = 0;
+	$total_freqtable_size = 0;
+	
 	foreach (get_all_corpora_info() as $curr_corpus => $r)
 	{
-// 		if ($r->visible)
-// 			$visible_options = '<option value="1" selected="selected">Visible</option>
-// 				<option value="0">Invisible</option>';
-// 		else
-// 			$visible_options = '<option value="1">Visible</option>
-// 				<option value="0" selected="selected">Invisible</option>';
-
-		
-		$javalinks = ' onmouseover="corpus_box_highlight_on(\'' . $curr_corpus 
+		$javalinks = ' onmouseover="corpus_box_highlight_on(\''  . $curr_corpus 
 			. '\')" onmouseout="corpus_box_highlight_off(\'' . $curr_corpus 
-			. '\')" ';
-
-//TODO: change tooltip below to the Title of the corpus, once that is in the database (or have as column?)
+			. '\')" '
+ 			;
 
 		?>
 		<tr>
 			<td class="concordgeneral" <?php echo "id=\"corpusCell_$curr_corpus\""; ?>>
-				<a class="menuItem" onmouseover="return escape('<?php echo $curr_corpus; ?>')" href="../<?php echo $curr_corpus; ?>">
+				<a class="menuItem" onmouseover="return escape('<?php echo escape_html($r->title); ?>')" href="../<?php echo $curr_corpus; ?>">
 					<strong><?php echo $curr_corpus; ?></strong>
 				</a>
 			</td>
 
 			<td class="concordgeneral" align="center">
-				<?php echo $r->date_of_indexing, "\n"; ?>
-			</td>			
+				<?php echo ('0000-00-00 00:00:00' == $r->date_of_indexing ? '(unrecorded)' : $r->date_of_indexing), "\n"; ?>
+			</td>
 
 			<td class="concordgeneral" align="right">
 				<?php echo number_format($r->size_tokens), "\n"; ?>
-			</td>			
+			</td>
 
-			<!--
-			<form action="index.php" method="get">
-			
-				<td align="center" class="concordgeneral">
-					<select name="updateVisible"><?php echo $visible_options; ?></select>
-				</td>
-				
-				<td align="center" class="concordgeneral">
-					<input <?php echo $javalinks; ?> type="submit" value="Update!">
-				</td>
-				
-				<input type="hidden" name="corpus" value="<?php echo $curr_corpus; ?>" />
-				<input type="hidden" name="admFunction" value="updateCorpusMetadata" />
-				<input type="hidden" name="uT" value="y" />
-			
-			</form>
+			<td class="concordgeneral" align="right">
+				<?php echo number_format($r->size_types), "\n"; ?>
+			</td>
+
+			<td class="concordgeneral" align="right">
+				<?php echo number_format($r->size_texts), "\n"; ?>
+			</td>
+
+			<td class="concordgeneral" align="right">
+				<?php
+				$total_index_size += $r->size_bytes_index;
+				echo number_format($r->size_bytes_index/$mb_div, 1), " MB\n"; 
+				?>
+			</td>
+
+			<td class="concordgeneral" align="right">
+				<?php
+				$total_freqtable_size += $r->size_bytes_freq;
+				echo number_format($r->size_bytes_freq/$mb_div, 1), " MB\n";
+				?>
+			</td>
+
+			<td class="concordgeneral" align="center">
+				<a class="menuItem"
+				<?php echo $javalinks , ' href="index.php?thisF=deleteCorpus&corpus=' , $curr_corpus; ?>&uT=y">
+					[Delete corpus]
+				</a>
+			</td>
+
+			<?php /*
+			UNUSED ACTIONS COMMENTED OUT
+			TODO: maybe a drop down / grow out cluster of links from a [Go To] box under actions?
 			
 			<td class="concordgeneral" align="center">
 				<a class="menuItem" 
-				<?php echo $javalinks . ' href="../' . $curr_corpus; ?>/index.php?thisQ=userAccess&uT=y">
+				<?php echo $javalinks , ' href="../' , $curr_corpus; ?>/index.php?thisQ=userAccess&uT=y">
 					[Access]
 				</a>
 			</td>
 			
 			<td class="concordgeneral" align="center">
 				<a class="menuItem" 
-				<?php echo $javalinks . ' href="../' . $curr_corpus; ?>/index.php?thisQ=manageMetadata&uT=y">
+				<?php echo $javalinks , ' href="../' , $curr_corpus; ?>/index.php?thisQ=manageMetadata&uT=y">
 					[Metadata]
 				</a>
 			</td>
 
 			<td class="concordgeneral" align="center">
 				<a class="menuItem" 
-				<?php echo $javalinks . ' href="../' . $curr_corpus; ?>/index.php?thisQ=manageAnnotation&uT=y">
+				<?php echo $javalinks , ' href="../' , $curr_corpus; ?>/index.php?thisQ=manageAnnotation&uT=y">
 					[Annotation]
 				</a>
 			</td>
 			
 			<td class="concordgeneral" align="center">
 				<a class="menuItem" 
-				<?php echo $javalinks . ' href="../' .$curr_corpus; ?>/index.php?thisQ=corpusSettings&uT=y">
+				<?php echo $javalinks , ' href="../' , $curr_corpus; ?>/index.php?thisQ=corpusSettings&uT=y">
 					[Goto corpus settings]
 				</a>
 			</td>
-			-->
-
-			<td class="concordgeneral" align="center">
-				<a class="menuItem"
-				<?php echo $javalinks . ' href="index.php?thisF=deleteCorpus&corpus=' . $curr_corpus; ?>&uT=y">
-					[Delete corpus]
-				</a>
-			</td>		
-		
+			*/ ?>
+			
 		</tr>
 		<?php
 	}
 	?></table>
+	
+	
+	<table class="concordtable" width="100%">
+		<tr>
+			<th class="concordtable" colspan="2">Disk use totals</th>
+		</tr>
+		<tr>
+			<td class="concordgrey">Total index data disk use</td>
+			<td class="concordgeneral" align="right">
+				<?php echo number_format($total_index_size/$mb_div, 1); ?> MB
+			</td>
+		</tr>
+		<tr>
+			<td class="concordgrey">Total frequency table disk use</td>
+			<td class="concordgeneral" align="right">
+				<?php echo number_format($total_freqtable_size/$mb_div, 1); ?> MB
+			</td>
+		</tr>
+		<tr>
+			<td class="concordgrey">Grand total </td>
+			<td class="concordgeneral" align="right">
+				<?php echo number_format(($total_index_size+$total_freqtable_size)/$mb_div, 1); ?> MB
+			</td>
+		</tr>
+		<tr>
+			<td class="concordgrey" colspan="2">
+				<p class="spacer">&nbsp;</p>
+				<p>
+					Important note: the disk usage estimates for corpus indexes <b>do not include</b>
+					the data for corpora which were inserted into CQPweb from pre-indexed CWB corpora,
+					since these indexes are not under CQPweb's control, 
+					even if they are physically stored in CQPweb's designated index-data folder
+					(though the frequency-table indexes for all such &ldquo;external&rdquo; corpora 
+					<em>are</em> counted).
+				</p>
+				<p>
+					(For reference: the total disk space taken up by the index-data directory is 
+					<b><?php echo number_format(recursive_sizeof_directory($Config->dir->index)/(1024*1024*1024),1); ?> GB</b>.)
+				<p>
+					User data such as queries, databases, and subcorpora are not counted towards the disk use total.
+					Moreover, there is a certain amount of system overhead for the MySQL database.
+				</p>				
+				<p class="spacer">&nbsp;</p>
+			</td>
+		</tr>
+	</table>
 	
 	<?php
 }
@@ -182,9 +230,12 @@ function printquery_installcorpus_indexed()
 				</td>
 			</tr>
 			<tr>
-				<td class="concordgeneral">Specify the CWB name (lowercase format)<br/>(will be used as CQPweb's internal short-handle)</td>
 				<td class="concordgeneral">
-					<input type="text" name="corpus_cwb_name" onKeyUp="check_c_word(this)" />
+					Specify the corpus &ldquo;name&rdquo; (limited to lowercase/digits/underscore)
+					<br/>(will be used in the web address and as the CWB/MySQL short-handle)
+				</td>
+				<td class="concordgeneral">
+					<input type="text" name="corpus_name" onKeyUp="check_c_word(this)" />
 				</td>
 			</tr>
 			<tr>
@@ -231,10 +282,17 @@ function printquery_installcorpus_indexed()
 			</tr>
 			<tr>
 				<td colspan="2" class="concordgrey">
-					&nbsp;<br/>
-					P-attributes (annotation) are read automatically from the registry file.
-					Use "Manage annotation" to add descriptions, tagset names/links, etc. 
-					<br/>&nbsp;
+					<p class="spacer">&nbsp;</p>
+					<p>
+						P-attributes (annotation) are read automatically from the registry file.
+						Use "Manage annotation" to add descriptions, tagset names/links, etc.
+					</p>
+					<p class="spacer">&nbsp;</p>
+					<p>
+						S-attributes (XML) are also read automatically from the registry file.
+						Use "Manage XML" to add descriptions, change the datatype of an XML attribute, etc.
+					</p> 
+					<p class="spacer">&nbsp;</p>
 				</td>
 			</tr>
 		<?php printquery_installcorpus_stylesheetrows(); ?>
@@ -459,18 +517,13 @@ function printquery_installcorpus_unindexed()
 					<br/>&nbsp;
 				</td>
 			</tr>
-			<!--
 			<tr>
-				<td class="concordgeneral">Specify the MySQL name of the corpus you wish to create</td>
 				<td class="concordgeneral">
-					<input type="text" name="corpus_mysql_name" onKeyUp="check_c_word(this)"/>
+					Specify the corpus &ldquo;name&rdquo; (limited to lowercase/digits/underscore)
+					<br/>(will be used in the web address and as the CWB/MySQL short-handle)
 				</td>
-			</tr>
-			-->
-			<tr>
-				<td class="concordgeneral">Specify a CWB/MySQL name for the corpus you wish to create<br/>(will be used as CQPweb's internal short-handle)</td>
 				<td class="concordgeneral">
-					<input type="text" name="corpus_cwb_name" onKeyUp="check_c_word(this)"/>
+					<input type="text" name="corpus_name" onKeyUp="check_c_word(this)"/>
 				</td>
 			</tr>
 			<tr>
@@ -485,18 +538,18 @@ function printquery_installcorpus_unindexed()
 					<input type="checkbox" name="corpus_scriptIsR2L" value="1"/>
 				</td>
 			</tr>
-			<tr>
-				<td class="concordgeneral">
-					Tick here if the corpus is encoded in Latin1 (iso-8859-1)
-					<br/>
-					<em>
-						(note that the character set in CQPweb is assumed to be UTF-8 unless otherwise specifed)
-					</em>
-				</td>
-				<td class="concordgeneral">
-					<input type="checkbox" name="corpus_encodeIsLatin1" value="1"/>
-				</td>
-			</tr>
+<!-- 			<tr> -->
+<!-- 				<td class="concordgeneral"> -->
+<!-- 					Tick here if the corpus is encoded in Latin1 (iso-8859-1) -->
+<!-- 					<br/> -->
+<!-- 					<em> -->
+<!-- 						(note that the character set in CQPweb is assumed to be UTF-8 unless otherwise specifed) -->
+<!-- 					</em> -->
+<!-- 				</td> -->
+<!-- 				<td class="concordgeneral"> -->
+<!-- 					<input type="checkbox" name="corpus_encodeIsLatin1" value="1"/> -->
+<!-- 				</td> -->
+<!-- 			</tr> -->
 		</table>
 		
 		<table class="concordtable" width="100%">
@@ -567,38 +620,6 @@ function printquery_installcorpus_unindexed()
 				</td>
 			</tr>
 		</table>
-		<!--
-		<table class="concordtable" width="100%" id="annotation_table_old">
-			<tr>
-				<th colspan="2" class="concordtable">S-attributes (XML elements)</th>
-			</tr>
-			<tr id="s_att_row_1">
-				<td rowspan="6" class="concordgeneral" id="s_instruction_cell">
-					<input type="radio" name="withDefaultSs" value="1" checked="checked"/>
-					<label for="withDefaultSs:1">Use default setup for S-attributes (only &lt;s&gt;)</label>
-					<br/>
-					<input type="radio" id="withDefaultSs:0" name="withDefaultSs" value="0"/>
-					<label for="withDefaultSs:0">Use custom setup (specify attributes in the boxes opposite)</label>
-					
-					<br/>&nbsp<br/>
-					<a onClick="add_s_attribute_row()" class="menuItem">
-						[Embiggen form]
-					</a>
-				</td>
-				<?php 
-				foreach(array(1,2,3,4,5,6) as $q)
-				{
-					if ($q != 1) echo '<tr>';
-					echo "<td align=\"center\" class=\"concordgeneral\">
-							<input type=\"text\" name=\"customS$q\"  onKeyUp=\"check_c_word(this)\"/>
-						</td>
-					</tr>
-					";
-				}
-				?>
-				
-		</table>
-		-->
 		<table class="concordtable" width="100%" id="annotation_table">
 			<tr>
 				<th colspan="5" class="concordtable">S-attributes (corpus XML)</th>
@@ -688,10 +709,34 @@ function printquery_installcorpus_unindexed()
 				
 		<table class="concordtable" width="100%">
 			<tr>
-				<th class="concordtable">Install corpus</th>
+				<th class="concordtable" colspan="2">Install corpus</th>
 			</tr>
+			
+			
+			<?php 
+			if (! empty($Config->server_admin_email_address))
+			{
+				?>
+				<tr>
+					<td class="concordgrey" width="50%">
+						Send email to administrator (<?php echo escape_html($Config->server_admin_email_address); ?>)
+						when first-stage installation is complete?
+					</td>
+					<td class="concordgeneral">
+						<input type="radio" id="emailDoneYes" name="emailDone" value="1" checked="checked" />
+						<label for="emailDoneYes">Yes</label>
+						<br/>
+						<input type="radio" id="emailDoneNo"  name="emailDone" value="0" />
+						<label for="emailDoneNo" >No</label>
+					</td>
+				</tr>
+				<?php
+			}
+			?> 
+			
+			
 			<tr>
-				<td class="concordgeneral" align="center">
+				<td class="concordgeneral" colspan="2" align="center">
 					<input type="submit" value="Install corpus with settings above" />
 					<br/>&nbsp;<br/>
 					<input type="reset" value="Clear this form" />
@@ -709,8 +754,8 @@ function printquery_installcorpus_unindexed()
 
 function printquery_installcorpusdone()
 {
-	/* addslashes shouldn't be necessary here, but paranoia never hurts */
-	$corpus = urlencode(addslashes($_GET['newlyInstalledCorpus']));
+	/* if, for whatever reason, we get here without the appropriate corpus handle, we get a link to the homepage as the first <li> */
+	$corpus = isset($_GET['newlyInstalledCorpus']) ? cqpweb_handle_enforce($_GET['newlyInstalledCorpus']) : '' ;
 	?>
 	<table class="concordtable" width="100%">
 		<tr>
@@ -731,6 +776,7 @@ function printquery_installcorpusdone()
 					</li>
 					<li>
 						<a onClick="$('#installedCorpusIndexingNotes').slideDown();">View the indexing notes</a>
+					</li>
 				</ul>
 				<p>&nbsp;</p>
 			</td>
@@ -739,7 +785,7 @@ function printquery_installcorpusdone()
 			<td class="concordgeneral" id="installedCorpusIndexingNotes" style="display:none">
 				<pre>
 				
-					<?php echo "\n", get_corpus_info($_GET['newlyInstalledCorpus'])->indexing_notes, "\n"; ?>
+					<?php echo "\n", ($corpus ? escape_html(get_corpus_info($corpus)->indexing_notes) : ''), "\n"; ?>
 				
 				</pre>
 			</td>
@@ -755,7 +801,7 @@ function printquery_installcorpus_stylesheetrows()
 				<th colspan="2" class="concordtable">Select a stylesheet</th>
 			</tr>
 			<tr>
-				<td class="concordgeneral" align="left">
+				<td class="concordgeneral" align="left" width="50%">
 					<input type="radio" id="cssCustom:0" name="cssCustom" value="0" checked="checked"/>
 					<label for="cssCustom:0">Choose a built in stylesheet:</label>
 				</td>
@@ -1124,7 +1170,7 @@ function printquery_metadatatemplates()
 			<td class="concordgrey" colspan="8">
 				&nbsp;<br/>
 				A metadata template is a description of a series of columns of metadata (data about either corpus texts, or some other
-				relevent entity in the strucutre of the corpus.) Each column has (1) a handle, (2) a description, and (3) a datatype.
+				relevant entity in the structure of the corpus.) Each column has (1) a handle, (2) a description, and (3) a datatype.
 				<br/>&nbsp;<br/>
 				You can use templates when setting up metadata tables instead of entering the field-structure every time.
 				<br/>&nbsp;<br/>
@@ -1296,7 +1342,7 @@ function printquery_xmltemplates()
 			<th class="concordtable" colspan="7">
 				Currently-defined XML templates
 			</th>
-		</tr>		
+		</tr>
 		<tr>
 			<th class="concordtable">
 				ID
@@ -1423,6 +1469,165 @@ function printquery_xmltemplates()
 }
 
 
+function printquery_visualisationtemplates()
+{
+	?>
+	<table class="concordtable" width="100%">
+		<tr>
+			<th class="concordtable" colspan="5">
+				Manage visualisation templates
+			</th>
+		</tr>	
+		<tr>
+			<td class="concordgrey" colspan="5">
+				&nbsp;<br/>
+				An XML-visualisation template is created when you flag an existing visualisation, created for any
+				corpus in the system, to be usable as a template.
+				<br/>&nbsp;<br/>
+				Once a visualisation is made a template it can be imported for use in another corpus by using the 
+				template list in that corpus's interface.  
+				<br/>&nbsp;<br/>
+				Use the controls to add or remove visualisation templates.
+				<br/>&nbsp;
+			</td>
+		</tr>
+		<tr>
+			<th class="concordtable" colspan="5">
+				Current visualisation templates
+			</th>
+		</tr>
+		<tr>
+			<th class="concordtable">
+				Original corpus
+			</th>
+			<th class="concordtable">
+				Applies to...
+			</th>
+			<th class="concordtable" >
+				HTML code
+			</th>
+			<th class="concordtable">
+				Show where?
+			</th>
+			<th class="concordtable">
+				Deactivate
+			</th>
+		</tr>
+		
+		<?php
+		$template_list = get_global_xml_visualisations(true);
+		if (empty($template_list))
+		{
+			?>
+			<tr>
+				<td class="concordgrey" colspan="5">
+					<p class="spacer">&nbsp;</p>
+					<p>None of your XML visualisations are currently enabled to act as templates. 
+					<p class="spacer">&nbsp;</p>
+				</td>		
+			</tr>
+			<?php 
+		}
+		foreach($template_list as $t)
+		{
+			list($tag, $startend) = explode('~', $t->element);
+			$startend = ($startend=='end' ? '/' : ''); 
+			$condition_print = htmlspecialchars($t->conditional_on, ENT_COMPAT, 'UTF-8', true);
+
+			echo "\n\t\t<tr>\n\n"
+ 				, '<td class="concordgeneral">', $t->corpus, '</td>'
+ 				, '<td class="concordgeneral">&lt;' , $startend , $tag , '&gt;'
+				, (empty($t->conditional_on) ? '' : "<br>where value matches <em>$condition_print</em>\n")  
+				, '</td>'
+ 				, '<td class="concordgeneral"><pre>', htmlspecialchars($t->html, ENT_COMPAT, 'UTF-8', true), '</pre></td>'
+	 			, '<td class="concordgeneral">'
+				, 'In concordance? &ndash; <b>', ($t->in_concordance?'Yes':'No'), '</b><br/>'
+				, 'In context?     &ndash; <b>', ($t->in_context    ?'Yes':'No'), '</b><br/>'
+				, 'In download?    &ndash; <b>', ($t->in_download   ?'Yes':'No'), '</b>'
+				, '</td>'
+				, '<form action="index.php" method="GET">'
+				, '<td class="concordgeneral" align="center"><input type="submit" value="Deactivate!"/></td>'
+				, '	<input type="hidden" name="admFunction" value="execute" />'
+				, '<input type="hidden" name="function" value="xml_visualisation_use_as_template" />'
+				, '<input type="hidden" name="args" value="', $t->id, '#0" />'
+				, '<input type="hidden" name="locationAfter" value="index.php?thisF=visualisationTemplates&uT=y" />'
+				, '<input type="hidden" name="uT" value="y" /></form>'
+				, "\n\n\t\t</tr>\n"
+ 				;
+		}
+		?>
+		
+		<tr>
+			<th class="concordtable" colspan="5">
+				Available non-template visualisations
+			</th>
+		</tr>
+		<tr>
+			<th class="concordtable">
+				Home corpus
+			</th>
+			<th class="concordtable">
+				Applies to...
+			</th>
+			<th class="concordtable" >
+				HTML code
+			</th>
+			<th class="concordtable">
+				Show where?
+			</th>
+			<th class="concordtable">
+				Make template
+			</th>
+		</tr>
+		
+		<?php
+		$template_list = get_global_xml_visualisations(false);
+		if (empty($template_list))
+		{
+			?>
+			<tr>
+				<td class="concordgrey" colspan="5">
+					<p class="spacer">&nbsp;</p>
+					<p>No visualisations are available to be turned into templates.
+					<p class="spacer">&nbsp;</p>
+				</td>		
+			</tr>
+			<?php 
+		}
+		foreach($template_list as $t)
+		{
+			list($tag, $startend) = explode('~', $t->element);
+			$startend = ($startend=='end' ? '/' : ''); 
+			$condition_print = htmlspecialchars($t->conditional_on, ENT_COMPAT, 'UTF-8', true);
+
+			echo "\n\t\t<tr>\n\n"
+ 				, '<td class="concordgeneral">', $t->corpus, '</td>'
+ 				, '<td class="concordgeneral">&lt;' , $startend , $tag , '&gt;'
+				, (empty($t->conditional_on) ? '' : "<br>where value matches <em>$condition_print</em>\n")  
+				, '</td>'
+ 				, '<td class="concordgeneral"><pre>', htmlspecialchars($t->html, ENT_COMPAT, 'UTF-8', true), '</pre></td>'
+	 			, '<td class="concordgeneral">'
+				, 'In concordance? &ndash; <b>', ($t->in_concordance?'Yes':'No'), '</b><br/>'
+				, 'In context?     &ndash; <b>', ($t->in_context    ?'Yes':'No'), '</b><br/>'
+				, 'In download?    &ndash; <b>', ($t->in_download   ?'Yes':'No'), '</b>'
+				, '</td>'
+				, '<form action="index.php" method="GET">'
+				, '<td class="concordgeneral" align="center"><input type="submit" value="Activate!"/></td>'
+				, '	<input type="hidden" name="admFunction" value="execute" />'
+				, '<input type="hidden" name="function" value="xml_visualisation_use_as_template" />'
+				, '<input type="hidden" name="args" value="', $t->id, '#1" />'
+				, '<input type="hidden" name="locationAfter" value="index.php?thisF=visualisationTemplates&uT=y" />'
+				, '<input type="hidden" name="uT" value="y" /></form>'
+				, "\n\n\t\t</tr>\n"
+ 				;
+		}
+		
+		?>
+	</table>
+	<?php
+}
+
+
 function printquery_newupload()
 {
 	// TODO this form could be aesthetically much nicer. I improved it a bit in v3.1.5, but a better layout could be achieved.
@@ -1461,6 +1666,7 @@ function printquery_newupload()
 	</table>
 	<?php
 }
+
 
 
 function printquery_uploadarea()
@@ -1613,6 +1819,11 @@ function printquery_useroverview()
 		<tr>
 			<td colspan="2" class="concordgrey"> 
 				(*) <a class="menuItem" href="index.php?thisF=userUnverified&uT=y">Click here to go to list of unverified accounts</a>
+				<?php
+				/* TODO create the list-unverified-users func.  
+				 * Note - this should be done with the same "layout" as the complex user searcvh fnuction. that contains all the needed details.
+				 */
+				?>
 			</td>
 		</tr>
 		
@@ -1711,23 +1922,38 @@ function printquery_usersearchform()
 	<?php
 }
 
+// TODO should it also be psosible to search for really old "last-seen" accounts, to make it easy to delete / suspend them?
+/* NB this func handles both the "search for some term" AND "search for unverified users" */
 function printquery_usersearch()
 {
-	if (! isset($_GET['searchterm']))
-		exiterror("No search term was supplied.");
+	if ('userUnverified' == $_GET['thisF'])
+		$look_for_unverified = true;
+	else
+	{
+		$look_for_unverified = false;
+		if (! isset($_GET['searchterm']))
+			exiterror("No search term was supplied.");
+	}
 	
 	?>
 	<table class="concordtable" width="100%">
 		<tr>
-			<th colspan="7" class="concordtable">
-				User search results
+			<th colspan="8" class="concordtable">
+				<?php echo ($look_for_unverified ? 'Viewing list of unverified user accounts' : 'User search results'); ?>
 			</th>
 		</tr>
 		<tr>
-			<td class="concordgrey" colspan="7">
-				&nbsp;
-				Your search term: <b><?php echo escape_html($_GET['searchterm']); ?></b>
-				&nbsp;
+			<td class="concordgrey" colspan="8">
+				<p class="spacer">&nbsp;</p>
+				<p>
+					<?php
+					if ($look_for_unverified)
+						echo "The following user accounts have been created on the system, but <b>not verified</b> as using a valid email address.\n";
+					else
+						echo "Your search term: <b>", escape_html($_GET['searchterm']), "</b>\n";
+					?>
+				</p>
+				<p class="spacer">&nbsp;</p>
 			</td>
 		</tr>
 		<tr>			
@@ -1736,6 +1962,7 @@ function printquery_usersearch()
 			<th class="concordtable">Realname</th>
 			<th class="concordtable">Email</th>
 			<th class="concordtable">Affiliation</th>
+			<th class="concordtable">Date created</th>
 			<th class="concordtable" colspan="2">Actions</th>
 		</tr>
 
@@ -1743,15 +1970,28 @@ function printquery_usersearch()
 		
 		$i = 0;
 		
-		$term = mysql_real_escape_string($_GET['searchterm']);
+		$sql = "select username, realname, email, affiliation, acct_create_time from user_info ";
+		if ($look_for_unverified)
+			$sql .= " where acct_status = " . USER_STATUS_UNVERIFIED . " order by username asc";
+		else
+		{
+			$term = mysql_real_escape_string($_GET['searchterm']);
+			$sql .= "
+						where username collate utf8_general_ci like '%$term%' 
+						or email collate utf8_general_ci like '%$term%' 
+						or realname collate utf8_general_ci like '%$term%' 
+ 						order by username asc
+					";
+		}
 		
-		$result = do_mysql_query("select username, realname, email, affiliation from user_info 
-									where username collate utf8_general_ci like '%$term%' 
-									or email collate utf8_general_ci like '%$term%' 
-									or realname collate utf8_general_ci like '%$term%' ");
+		$result = do_mysql_query($sql);
+		
 		if (1 > mysql_num_rows($result))
-			echo "\n\t\t<tr><td colspan=\"6\" class=\"concordgrey\">No results found.</td></tr>\n";
-			
+			echo "\n\t\t<tr><td colspan=\"8\" class=\"concordgrey\">"
+				, "<p class=\"spacer\">&nbsp;</p><p>No results found.</p><p class=\"spacer\">&nbsp;</p>"
+ 				, "</td></tr>\n"
+ 				;
+		
 		while (false !== ($r = mysql_fetch_object($result)))
 			echo "\n\t\t<tr>"
 				, "\n\t\t\t<td class=\"concordgeneral\">", ++$i, "</td>"
@@ -1760,9 +2000,10 @@ function printquery_usersearch()
 				, "\n\t\t\t<td class=\"concordgeneral\">", escape_html($r->realname), "</td>"
 				, "\n\t\t\t<td class=\"concordgeneral\">", escape_html($r->email), "</td>"
 				, "\n\t\t\t<td class=\"concordgeneral\">", escape_html($r->affiliation), "</td>"
-				, "\n\t\t\t<td class=\"concordgeneral\"align=\"center\"><a class=\"menuItem\" href=\"index.php?thisF=userView&username="
+				, "\n\t\t\t<td class=\"concordgeneral\" align=\"center\">", $r->acct_create_time, "</td>"
+				, "\n\t\t\t<td class=\"concordgeneral\" align=\"center\"><a class=\"menuItem\" href=\"index.php?thisF=userView&username="
 					, $r->username, "&uT=y\">[View full details]</a></td>"
-				, "\n\t\t\t<td class=\"concordgeneral\"align=\"center\"><a class=\"menuItem\" href=\"index.php?thisF=userDelete&checkUserDelete="
+				, "\n\t\t\t<td class=\"concordgeneral\" align=\"center\"><a class=\"menuItem\" href=\"index.php?thisF=userDelete&checkUserDelete="
 					, $r->username, "&uT=y\">[Delete account]</a></td>"
 				, "\n\t\t</tr>\n"
 				;
@@ -1779,13 +2020,13 @@ function printquery_userview()
 	include('../lib/user-iso31661.inc.php');
 	
 	/* allow this view to be accessed either by username or by an ID. 
-	 * n.b. Do not confuse local var $user with global var $User!!!! */
+	 * n.b. Do not confuse local object $user with global object $User!!!! */
 	if (isset($_GET['username']))
 		$user = get_user_info($_GET['username']);
 	else 
 	{
 		if (!isset($_GET['userID']))
-			exiterror("User view function accessed, but no user ID specified.");
+			exiterror("User view function accessed, but no username / user ID specified.");
 		else 
 			$user = get_user_info(user_id_to_name((int)$_GET['userID']));
 	}
@@ -1902,13 +2143,167 @@ function printquery_userview()
 			<td class="concordgeneral">Password expires:</td>
 			<td class="concordgeneral"><?php echo 0==$user->password_expiry_time ? 'Not set' : escape_html($user->password_expiry_time); ?></td>
 		</tr>
+		
+		<!-- ************************************************************************* -->
+		
+		<!--  TODO the following could prob be reformatted as separate a 3-col table: saved item desc, N of items, disk space used -->
 
 		<tr>
 			<th colspan="2" class="concordtable">
+				User's disk usage
+			</th>
+		</tr>
+		<tr>
+			<td class="concordgeneral">Number of saved/categorised queries:</td>
+			<td class="concordgeneral">
+				<?php 
+				$sql = "select count(*) as number, sum(file_size) as bytes from saved_queries 
+  							where saved != " . CACHE_STATUS_UNSAVED . " and user = '{$user->username}'";
+				$o = mysql_fetch_object(do_mysql_query($sql));
+				$saved_query_number     = number_format( $o->number );
+				$saved_query_disk_space = number_format( ((float)$o->bytes) / (1024.0 * 1024.0), 1 ) . ' MB';
+				echo $saved_query_number;
+				?>
+			</td>
+		</tr>
+		<tr>
+			<td class="concordgeneral">Disk space for saved queries:</td>
+			<td class="concordgeneral"><?php echo $saved_query_disk_space; ?></td>
+		</tr>
+		<tr>
+			<td class="concordgeneral">Disk space for categorised-query user-databases:</td>
+			<td class="concordgeneral"><?php /*TODO */ ?>TODO</td>
+		</tr>
+		<tr>
+			<td class="concordgeneral">Number of saved multivariate data matrices:</td>
+			<td class="concordgeneral"><?php /*TODO */ ?>TODO</td>
+		</tr>
+		<tr>
+			<td class="concordgeneral">Disk space for multivariate data matrices:</td>
+			<td class="concordgeneral"><?php /*TODO */ ?>TODO</td>
+		</tr>
+		
+		
+		<!-- ************************************************************************* -->
+		
+
+		<!--  TODO not v pretty like this.  -->
+		
+		<tr>
+			<th colspan="2" class="concordtable">
+				User's current log-in sessions
+			</th>
+		</tr>
+		<tr>
+			<td class="concordgrey" align="center">Session was logged in</td>
+			<td class="concordgrey" align="center">Session will expire</td>
+		</tr>
+		
+		<?php 
+		
+		$result = do_mysql_query("select * from user_cookie_tokens where user_id = " . $user->id);
+		
+		if (0 == mysql_num_rows($result))
+			echo "\n\t\t<tr><td class=\"concordgeneral\" colspan=\"2\" align=\"center\">No present logins.</td></tr>\n";
+		
+		while (false !== ($o = mysql_fetch_object($result)))
+			echo "\n\t\t<tr>"
+ 				, "<td class=\"concordgeneral\" align=\"center\">"
+ 				, date(CQPWEB_UI_DATE_FORMAT, $o->creation)
+ 				, "</td>"
+ 				, "<td class=\"concordgeneral\" align=\"center\">"
+ 				, date(CQPWEB_UI_DATE_FORMAT, $o->expiry)
+ 				, "</td>"
+ 				, "</tr>\n"
+ 				;
+		
+		?>
+
+	</table>
+	
+	<table class="concordtable" width="100%">
+
+		<tr>
+			<th colspan="3" class="concordtable">
 				Actions
 			</th>
 		</tr>
+		<tr>
+			<td class="concordgrey">
+				&nbsp;<br>
+				Reset the user's password:
+				<br>&nbsp;
+			</td>
+			<form action="index.php" method="POST">
+				<td class="concordgeneral">
+					Enter new password for <b><?php echo $user->username; ?></b>:
+
+					<input type="text" name="newPassword" width="50" />
+				</td>
+				<td colspan="2" class="concordgeneral" align="center">
+					<input type="submit" value="Reset the password" />
+				</td>
+				<input type="hidden" name="userForPasswordReset" value="<?php echo $user->username; ?>" />
+				<input type="hidden" name="admFunction" value="resetUserPassword"/>
+				<input type="hidden" name="locationAfter" value="index.php?thisF=userView&username=<?php echo $user->username; ?>&uT=y"/>
+				<input type="hidden" name="uT" value="y" />
+				<?php
+				// TODO (maybe?) add JavaScript Are You Sure? Pop up to the submission button of this form 
+				?>
+			</form>
+
+		</tr>
+		
+		<!-- ****************************************************************** -->
+		
+		<tr>
+			<td class="concordgrey">
+				&nbsp;<br>
+				Delete this user account:
+				<br>&nbsp;
+			</td>
+			<td class="concordgeneral" colspan="2">
+				&nbsp;<br>
+				<a class="menuItem" href="index.php?thisF=userDelete&checkUserDelete=<?php echo $user->username; ?>&uT=y">
+					[Click here to totally delete this user's account from the system]
+				</a>
+				<br>&nbsp;
+			</td>
+		</tr>
+		
+		<!-- ****************************************************************** -->
+
+		<tr>
+			<td class="concordgrey">
+				&nbsp;<br>
+				Logout this user from all current sessions:
+				<br>&nbsp;
+			</td>
+			<form action="index.php" method="GET">
+				<td class="concordgeneral" colspan="2">
+					&nbsp;<br>
+					<input type="submit" value="Force full logout for <?php echo $user->username; ?>" />
+					<br>&nbsp;
+					<input type="hidden" name="admFunction" value="execute" />
+					<input type="hidden" name="function" value="invalidate_user_cookie_tokens" />
+					<input type="hidden" name="args" value="<?php echo $user->username; ?>" />
+					<input type="hidden" name="uT" value="y" />
+				</td>
+			</form>
+		</tr>
+		
+		<!-- ****************************************************************** -->
+
+		<?php
+		
+		// TODO - more actions under this heading!!
+		// suspend; set expriy on password; force logout;  ...... etc.
+		
+		
+		?>
+		
 	</table>
+	
 
 	<table class="concordtable" width="100%">
 		<tr>
@@ -1930,7 +2325,9 @@ function printquery_userview()
 		$result = do_mysql_query("select corpus, count(corpus) as N from query_history where user='{$user->username}' group by corpus order by N desc");
 		if (1 > mysql_num_rows($result))
 			echo "\n\t\t<tr>"
-				, "\n\t\t\t<td colspan=\"2\" align=\"center\" class=\"concordgrey\">This user has performed no queries.</td>"
+				, "\n\t\t\t<td colspan=\"2\" align=\"center\" class=\"concordgrey\"><p class=\"spacer\">&nbsp;</p>"
+				, "<p>This user has performed no queries.</p>"
+ 				, "<p class=\"spacer\">&nbsp;</p></td>"
 				, "\n\t\t</tr>\n"
 				;
 		while (false !== ($nq = mysql_fetch_object($result)))
@@ -2000,7 +2397,7 @@ function printquery_userview()
 	</table>
 	
 	
-	<!-- ****************************************************************** -->
+	<!-- ****************************************************************** 
 	
 	
 	<table class="concordtable" width="100%">
@@ -2035,16 +2432,15 @@ function printquery_userview()
 		</form>
 
 	</table>
-
+	-->
 
 
 	<?php
 	
 	// TODO: add privileges; add groups && group privileges ;  add indication of user files / user corpora
-	// individual user privileges should have [x] boxes (as should group memeberships)
+	// individual user privileges should have [x] boxes (as should group memberships)
 	
-	// TODO add delete user w. JavaScript "are you sure" (zee useradmin_old for old v of form.)
-	// TODO add reset user password button
+	// TODO add delete user w. JavaScript "are you sure" (see useradmin_old for old v of form.)
 	
 	// TODO add the expiry functionality for both acft and password. 
 	
@@ -2055,9 +2451,8 @@ function printquery_useradmin()
 	printquery_useroverview();
 	printquery_usersearchform();
 
-	//TODO functionalise create user form; make the javascript less wasteful 
-	//TODO add mass-logout button (delete cookie tokens)
-	//TODO add link to list of unverified/inactive accounts (which should ahve "delete" buttons next to them, for easy clearout of the trash) 
+	// TODO functionalise create user form  ; make the javascript less wasteful
+	// alos create sep funciton for user logout fgorm??? 
 	
 	global $Config;
 	
@@ -2190,6 +2585,60 @@ function printquery_useradmin()
 			</td>
 		</tr>
 	</table>
+	
+	<?php
+	
+	list($n_sessions, $n_users) = mysql_fetch_row(do_mysql_query("select count(*), count(distinct(user_id)) from user_cookie_tokens"));
+		
+	?>
+	
+	<table class="concordtable" width="100%">
+		<tr>
+			<th colspan="2" class="concordtable">
+				Logged in users
+			</th>
+		</tr>
+		<tr>
+			<td class="concordgeneral" width="70%">
+				Number of users currently logged in:
+			</td>
+			<td class="concordgeneral" align="right">
+				<?php echo number_format($n_users), "\n"; ?>
+			</td>
+		<tr>
+			<td class="concordgeneral">
+				Number of log in sessions:
+				<br/>
+				(one user may have multiple sessions)
+			</td>
+			<td class="concordgeneral" align="right">
+				<?php echo number_format($n_sessions), "\n"; ?>
+			</td>
+		</tr>
+		
+		<form action="index.php" method="GET">
+			<tr>
+				<td colspan="2" class="concordgrey" align="center">
+					Click below to perform a mass logout of all currently logged-in users
+					(your own current session included)
+				</td>
+			</tr>
+			<tr>
+				<td colspan="2" class="concordgeneral" align="center">
+					<p class="spacer">&nbsp;</p>
+					<p>
+						<input type="submit" value="Log out all currently logged-in users" />
+					</p>
+					<p class="spacer">&nbsp;</p>
+				</td>
+			</tr>
+			<input type="hidden" name="locationAfter" value="../"/>
+			<input type="hidden" name="function" value="invalidate_all_cookie_tokens"/>
+			<input type="hidden" name="admFunction" value="execute"/>
+			<input type="hidden" name="uT" value="y" />
+		</form>
+	</table>
+	
 	
 	<?php
 }
@@ -2394,6 +2843,7 @@ function printquery_useradmin_old()
 
 function printquery_userdelete()
 {
+	global $Config;
 	?>
 	<table class="concordtable" width="100%">
 		<?php 
@@ -2420,29 +2870,39 @@ function printquery_userdelete()
 		</tr>
 		<tr>
 			<td class="concordgeneral" align="center">
-				Real name:  <em><?php echo empty($user->realname)    ? '[unset]' : escape_html($user->realname);    ?></em>
-				|
-				Affilation: <em><?php echo empty($user->affiliation) ? '[unset]' : escape_html($user->affiliation); ?></em>
-				|
-				Email:      <em><?php echo empty($user->email)       ? '[unset]' : escape_html($user->email);       ?></em>
+				<p class="spacer">&nbsp;</p>
+				<p>
+					Current account status: <b><?php echo $Config->user_account_status_description_map[$user->acct_status]; ?></b>
+				</p>
+				<p>
+					Real name:  <em><?php echo empty($user->realname)    ? '[unset]' : escape_html($user->realname);    ?></em>
+					|
+					Affilation: <em><?php echo empty($user->affiliation) ? '[unset]' : escape_html($user->affiliation); ?></em>
+					|
+					Email:      <em><?php echo empty($user->email)       ? '[unset]' : escape_html($user->email);       ?></em>
+				</p>
+				<p class="spacer">&nbsp;</p>
 			</td>
 		</tr>
 		<tr>
 			<td class="concordgrey" align="center">
-				Are you sure you want to do this?
-				<br>&nbsp;<br>
-				Deleting a user account also deletes <b>all</b> their saved data and uploaded files.
+				<p class="spacer">&nbsp;</p>
+				<p>Are you sure you want to do this?</p>
+				<p>Deleting a user account also deletes <b>all</b> their saved data and uploaded files.</p>
+				<p class="spacer">&nbsp;</p>
 			</td>
 		</tr>
 		<tr>
 			<td class="concordgeneral" align="center">
 				<form action="index.php" method="get">
-					<br/>
-					<input type="checkbox" name="sureyouwantto" value="yes"/>
-					Yes, I'm sure I want to do this.
-					<br/>&nbsp;<br/>
-					<input type="submit" value="I am definitely sure I want to delete this user's account." />
-					<br/>
+					<p class="spacer">&nbsp;</p>
+					<p>
+						<input type="checkbox" name="sureyouwantto" value="yes"/>
+						Yes, I'm sure I want to do this.
+					</p>
+					<p class="spacer">&nbsp;</p>
+					<p><input type="submit" value="I am definitely sure I want to delete this user's account." /></p>
+					<p class="spacer">&nbsp;</p>
 					<input type="hidden" name="admFunction" value="deleteUser" />
 					<input type="hidden" name="userToDelete" value="<?php echo $checkname; ?>" />
 					<input type="hidden" name="uT" value="y" />
@@ -2506,12 +2966,12 @@ function printquery_groupadmin()
 
 				?>
 				<td class="concordgeneral"  align="center">
-					<input type="text" maxlength="255" size="50" name="newGroupAutojoinRegex" value="<?php
+					<input type="text" maxlength="1024" size="50" name="newGroupAutojoinRegex" value="<?php
 						echo escape_html($group->autojoin_regex);
 					?>" />
 				</td>
 				<td class="concordgeneral" align="center">
-					<input type="submit" value="Click to update" />
+					<input type="submit" value="Update" />
 				</td>
 				<?php
 			}
@@ -2795,12 +3255,12 @@ function printquery_privilegeadmin()
 	?>
 	<table class="concordtable" width="100%">
 		<tr>
-			<th class="concordtable" colspan="5">
+			<th class="concordtable" colspan="6">
 				Manage privileges
 			</th>
 		</tr>
 		<tr>
-			<td class="concordgrey" colspan="5">
+			<td class="concordgrey" colspan="6">
 				&nbsp;<br/>
 				&ldquo;Privileges&rdquo; are rights to use different aspects of the CQPweb system: corpora,
 				plugins, and so on. Once defined, privileges can be assigned (&ldquo;granted&rdquo;)
@@ -2812,7 +3272,7 @@ function printquery_privilegeadmin()
 			</td>
 		</tr>
 		<tr>
-			<th class="concordtable" colspan="5">
+			<th class="concordtable" colspan="6">
 				Existing privileges
 			</th>
 		</tr>
@@ -2829,7 +3289,7 @@ function printquery_privilegeadmin()
 			<th class="concordtable">
 				Scope
 			</th>
-			<th class="concordtable">
+			<th class="concordtable" colspan="2">
 				Actions
 			</th>
 		</tr>
@@ -2845,33 +3305,175 @@ function printquery_privilegeadmin()
 				, "<td class=\"concordgeneral\">{$Config->privilege_type_descriptions[$p->type]}</td>"
 				, "<td class=\"concordgeneral\">$scope_cell_string</td>"
 				, "<td class=\"concordgeneral\" align=\"center\">"
+					, "<a class=\"menuItem\" href=\"index.php?thisF=editPrivilege&privilege={$p->id}&uT=y\">[Edit]</a>"
+				, "</td>"
+				, "<td class=\"concordgeneral\" align=\"center\">"
 					, "<a class=\"menuItem\" href=\"index.php?admFunction=deletePrivilege&privilege={$p->id}&uT=y\">[Delete]</a>"
 				, "</td>"
-				, "</tr>\n";
+				, "</tr>\n"
+ 				;
 		}
 		?>
 		
 	</table>
+	
+	<?php 
+	//TODO
+	// this form is quite big, and not frequentlyy used, really. Might be better to have it collapsed to its jheader row
+	// with a jQuery [+] which will scorll ti down? [+]  [-] 
+	?>
+	
 	<table class="concordtable" width="100%">
 		<tr>
-			<th class="concordtable" colspan="2">
+			<th class="concordtable" colspan="3">
 				Create a new privilege
 			</th>
 		</tr>
-			<td class="concordgrey" colspan="2">
-				&nbsp;<br/>
-				Adding a customised privilege will be added soon, for now use "generate default privileges" below.
-				<br/>&nbsp;
-			</td>
+
+		<form action="index.php" method="GET">
+			<tr>
+				<td class="concordgrey" rowspan="4" width="30%">
+					New corpus access privilege
+				</td>
+				<td class="concordgeneral">Description</td>
+				<td class="concordgeneral">
+					<input type="text" name="description" />
+				</td>
+			</tr>
+			<tr>
+				<td class="concordgeneral">Access level</td>
+				<td class="concordgeneral">
+					<select name="privilegeType">
+						<?php
+						echo  '<option value="', PRIVILEGE_TYPE_CORPUS_FULL, '">Full</option>'
+ 							, '<option value="', PRIVILEGE_TYPE_CORPUS_NORMAL, '" selected="selected">Normal</option>'
+ 							, '<option value="', PRIVILEGE_TYPE_CORPUS_RESTRICTED, '">Restricted</option>'
+							, "\n"
+							;
+						?>
+					</select>
+				</td>
+			</tr>
+			<tr>
+				<td class="concordgeneral">Initial corpus</td>
+				<td class="concordgeneral">
+					<select name="corpus">
+						<option selected="selected">Select corpus...</option>
+						<?php
+						foreach (list_corpora() as $c)
+							echo '<option>', $c, "</option>\n";
+						?>
+					</select>
+				</td>
+			</tr>
+			<tr>
+				<td class="concordgeneral" colspan="2" align="center">
+					<input type="submit" value="Create privilege!" />
+				</td>
+			</tr>
+			<input type="hidden" name="admFunction" value="newCorpusPrivilege"/>
+			<input type="hidden" name="uT" value="y"/>
+		</form>
+		
+		<tr><th class="concordtable" colspan="3"></th></tr>
+		
+		<form action="index.php" method="GET">
+			<tr>
+				<td class="concordgrey" rowspan="3" width="30%">
+					New frequency list privilege
+				</td>
+				<td class="concordgeneral">Description</td>
+				<td class="concordgeneral">
+					<input type="text" name="description" />
+				</td>
+			</tr>
+			<tr>
+				<td class="concordgeneral">Subcorpus size limit<br/>(in tokens)</td>
+				<td class="concordgeneral">
+					<input type="text" name="nTokens"/>
+				</td>
+			</tr>
+			<tr>
+				<td class="concordgeneral" colspan="2" align="center">
+					<input type="submit" value="Create privilege!" />
+				</td>
+			</tr>
+			<input type="hidden" name="privilegeType" value="<?php echo PRIVILEGE_TYPE_FREQLIST_CREATE; ?>"/>
+			<input type="hidden" name="admFunction" value="newFreqlistPrivilege"/>
+			<input type="hidden" name="uT" value="y"/>
+		</form>
+		
+		
+		
+		<tr><th class="concordtable" colspan="3"></th></tr>
+		
+		<form action="index.php" method="GET">
+			<tr>
+				<td class="concordgrey" rowspan="3" width="30%">
+					New file upload privilege
+				</td>
+				<td class="concordgeneral">Description</td>
+				<td class="concordgeneral">
+					<input type="text" name="description" />
+				</td>
+			</tr>
+			<tr>
+				<td class="concordgeneral">Maximum allowed upload<br/>(in bytes)</td>
+				<td class="concordgeneral">
+					<input type="text" name="nBytes"/>
+				</td>
+			</tr>
+			<tr>
+				<td class="concordgeneral" colspan="2" align="center">
+					<input type="submit" value="Create privilege!" />
+				</td>
+			</tr>
+			<input type="hidden" name="privilegeType" value="<?php echo PRIVILEGE_TYPE_UPLOAD_FILE; ?>"/>
+			<input type="hidden" name="admFunction" value="newUploadPrivilege"/>
+			<input type="hidden" name="uT" value="y"/>
+		</form>
+		
+		
+		
+		<tr><th class="concordtable" colspan="3"></th></tr>
+		
+		<form action="index.php" method="GET">
+			<tr>
+				<td class="concordgrey" rowspan="2" width="30%">
+					New CQP binary-file privilege
+				</td>
+				<td class="concordgeneral">Description</td>
+				<td class="concordgeneral">
+					<input type="text" name="description" />
+				</td>
+			</tr>
+			<tr>
+				<td class="concordgeneral" colspan="2" align="center">
+					<input type="submit" value="Create privilege!" />
+				</td>
+			</tr>
+			<input type="hidden" name="privilegeType" value="<?php echo PRIVILEGE_TYPE_CQP_BINARY_FILE; ?>"/>
+			<input type="hidden" name="admFunction" value="newUploadPrivilege"/>
+			<input type="hidden" name="uT" value="y"/>
+		</form>
+	
+
+		
+		<tr><th class="concordtable" colspan="3"></th></tr>
+		
+	</table>
+	
+	
+	<table class="concordtable" width="100%">
 		<tr>
 			<th class="concordtable" colspan="2">
-				Generate default privileges
+				Generate default corpus privileges
 			</th>
 		</tr>
 		<tr>
 			<td class="concordgrey" colspan="2">
 				&nbsp;<br/>
-				The &ldquo;default&rdquo; privileges are:
+				The &ldquo;default&rdquo; corpus privileges are:
 				<ul>
 					<li>A <em>full access</em> privilege for each corpus;</li>
 					<li>A <em>normal access</em> privilege for each corpus;</li>
@@ -2879,14 +3481,6 @@ function printquery_privilegeadmin()
 				</ul>
 				Generating default privileges creates these three privileges for each corpus on the system,
 				if those privileges do not exist already. Existing privileges are not affected.
-				<br/>&nbsp;<br/>
-				In addition, four levels of privilege are generated for frequency-list creation.
-				Users can only build frequency lists for subcorpora if they have a privilege that
-				covers a subcorpus of that size. The automatically-created levels are one, ten, 
-				twenty-five and one hundred million tokens. 
-				<br/>&nbsp;<br/>
-				(At least one such privilege should be granted to the "everybody" group, 
-				or some users may not be able to create frequency lists at all.)  
 				<br/>&nbsp;
 			</td>
 		</tr>
@@ -2919,7 +3513,7 @@ function printquery_privilegeadmin()
 			<tr>
 				<td class="concordgeneral" colspan="2" align="center">
 					&nbsp;<br/>
-					<input type="submit" value="Generate all default privileges" />
+					<input type="submit" value="Generate default privileges for all corpora" />
 					<br/>&nbsp;
 				</td>
 			</tr>
@@ -2927,6 +3521,367 @@ function printquery_privilegeadmin()
 			<input type="hidden" name="corpus" value="~~all~~" />
 			<input type="hidden" name="uT" value="y" />
 		</form>
+		<tr>
+			<td class="concordgrey" colspan="2">
+				&nbsp;<br/>
+				The other &ldquo;default&rdquo; privileges are for the frequency-list creation and file upload.
+				<br/>&nbsp;<br/>
+				When these defaults are generated, four levels of privilege are added for frequency-list creation.
+				Users can only build frequency lists for subcorpora if they have a privilege that
+				covers a subcorpus of that size. The automatically-created levels are one, ten, 
+				twenty-five and one hundred million tokens. 
+				<br/>&nbsp;<br/>
+				Similarly, four levels of privilege for file upload are added. These affect all functions where
+				a user uploads a file (for example, for query upload) and set a limit on the size of file that can
+				be inserted. The automatically-created levels are 0.5MB, 1MB, and 2MB. 
+				<br/>&nbsp;<br/>
+				At least one of each of these two types of privilege should be granted to the "everybody" group, 
+				or some users may not be able to create frequency lists / upload files at all.  
+				<br/>&nbsp;
+			</td>
+		</tr>
+		<form action="index.php" method="GET">
+			<tr>
+				<td class="concordgeneral" colspan="2" align="center">
+					&nbsp;<br/>
+					<input type="submit" value="Generate default privileges for all frequency lists / file upload" />
+					<br/>&nbsp;
+				</td>
+			</tr>
+			<input type="hidden" name="admFunction" value="generateDefaultPrivileges" />
+			<input type="hidden" name="corpus" value="~~noncorpus~~" />
+			<input type="hidden" name="uT" value="y" />
+		</form>
+	</table>
+	<?php
+}
+
+function printquery_editprivilege()
+{
+	global $Config;
+	
+	if (!isset($_GET['privilege']))
+		exiterror("No privilege ID to edit was supplied!");
+	$p = (int) $_GET['privilege'];
+
+	//TODO this!
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	//TODO not super necessary but needed at this point.
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	//TODO
+	
+	$info = get_privilege_info($p);
+	
+	?>
+	<table class="concordtable" width="100%">
+		<tr>
+			<th class="concordtable" colspan="2">
+				Editing privilege # <?php echo $p; ?>
+			</th>
+		</tr>
+		<tr>				
+			<td class="concordgrey" colspan="2">
+				<p class="spacer">&nbsp;</p>
+				<p><b>Privilege type</b>: <em><?php echo $Config->privilege_type_descriptions[$info->type]; ?></em>.</p>
+				<p class="spacer">&nbsp;</p>
+				<p>You can change the description of any kind of privilege.</p>
+				<p class="spacer">&nbsp;</p>
+				<p>
+					<?php
+					switch ($info->type)
+					{
+					case PRIVILEGE_TYPE_CORPUS_FULL:
+					case PRIVILEGE_TYPE_CORPUS_NORMAL:
+					case PRIVILEGE_TYPE_CORPUS_RESTRICTED:
+						echo "You can also add or remove a corpus from the list of corpora that this privilege applies to, "
+							, "or change the access level (among normal, restricted, full).\n";
+						break;
+					case PRIVILEGE_TYPE_FREQLIST_CREATE:
+						echo "You can also change the limit on the size of subcorpora or corpus sections "
+							, "for which users with this privilege can create frequency lists.\n"
+ 							;
+						break;
+					case PRIVILEGE_TYPE_UPLOAD_FILE:
+						echo "You can also change the limit on the size of files that users with this privilege can upload.\n";
+						break;
+					case PRIVILEGE_TYPE_CQP_BINARY_FILE:
+						echo "This kind of privilege does not have any other features that can be edited.\n";
+						break;
+					}
+					?>
+				</p>
+				<p class="spacer">&nbsp;</p>
+			</td>
+		</tr>
+		
+		
+		<tr>
+			<th class="concordtable" colspan="2">
+				Change description
+			</th>
+		</tr>
+		<form action="index.php" method="GET">
+			<tr>				
+				<td class="concordgeneral" align="center">
+					<p class="spacer">&nbsp;</p>
+					<p>Edit:&nbsp;<input type="text" size="50" name="description" value="<?php echo escape_html($info->description); ?>"/></p>
+					<p class="spacer">&nbsp;</p>
+				</td>
+				<td class="concordgeneral" align="center">
+					<p class="spacer">&nbsp;</p>
+					<p><input type="submit" value="Update"/></p>
+					<p class="spacer">&nbsp;</p>
+				</td>
+			</tr>
+			<input type="hidden" name="admFunction" value="updatePrivilegeDesc" />
+			<input type="hidden" name="privilege" value="<?php echo $p; ?>" />
+			<input type="hidden" name="uT" value="y" />
+		</form>
+		
+		<?php 
+		switch ($info->type)
+		{
+		case PRIVILEGE_TYPE_CORPUS_FULL:
+		case PRIVILEGE_TYPE_CORPUS_NORMAL:
+		case PRIVILEGE_TYPE_CORPUS_RESTRICTED:
+			
+			/* for all these, we will need a list of corpus descriptions eventually. */
+			$corpora_info = get_all_corpora_info();
+			
+			?>
+			
+			<tr>
+				<th class="concordtable" colspan="2">
+					Add or remove corpora
+				</th>
+			</tr>
+			<tr>
+				<td class="concordgrey" colspan="2">
+					<p>
+						This privilege currently covers the following corpora:
+						<?php echo 1 > count($info->scope_object) ? "<em>None (empty scope)</em>" : "\n" ; ?>
+					</p>
+				</td>
+			</tr>
+	 		
+	 					
+			<?php 
+			foreach($info->scope_object as $c)
+				echo  "\n\t\t\t\t\t\t\t<tr>"
+					, '<td class="concordgeneral">'
+					, escape_html($corpora_info[$c]->title)
+					, '</td>'
+					, '<td class="concordgeneral" align="center"><a href="index.php?admFunction=editPrivRemoveCorpus&corpus='
+					, $c , '&privilege=', $p, '&uT=y" class="menuItem">[Remove]</a></td>'
+					, "</tr>\n"
+					;
+			?>
+			
+			
+			<form action="index.php" method="GET">
+				<tr>				
+					<td class="concordgeneral" align="center">
+						<p class="spacer">&nbsp;</p>
+						<p>
+							Select corpus to add: 
+							<select name="corpus">
+								<option selected="selected">Select corpus...</option>
+							
+								<?php
+								foreach ($corpora_info as $c => $obj)
+									if (!in_array($c, $info->scope_object))
+										echo '<option value="', $c,  '">', escape_html($corpora_info[$c]->title), '</option>';
+								?>
+								
+							</select>
+						</p>
+						<p class="spacer">&nbsp;</p>
+					</td>
+					<td class="concordgeneral" align="center">
+						<p class="spacer">&nbsp;</p>
+						<p><input type="submit" value="Add corpus to privilege"/></p>
+						<p class="spacer">&nbsp;</p>
+					</td>
+				</tr>
+				<input type="hidden" name="admFunction" value="editPrivAddCorpus" />
+				<input type="hidden" name="privilege" value="<?php echo $p; ?>" />
+				<input type="hidden" name="uT" value="y" />
+			</form>
+			
+			
+			<tr>
+				<th class="concordtable" colspan="2">
+					Change access level
+				</th>
+			</tr>
+			<tr>
+				<td class="concordgrey">
+					<p>
+						This privilege gives <b>
+						<?php 
+						switch ($info->type)
+						{
+						case PRIVILEGE_TYPE_CORPUS_FULL:       echo "full";       break;
+						case PRIVILEGE_TYPE_CORPUS_NORMAL:     echo "normal";     break;
+						case PRIVILEGE_TYPE_CORPUS_RESTRICTED: echo "restricted"; break;
+						}
+						?>
+						</b> access.
+					</p>
+				</td>
+				<td class="concordgeneral" align="center">
+					<p class="spacer">&nbsp;</p>
+					
+					<?php
+					foreach (array(PRIVILEGE_TYPE_CORPUS_FULL,PRIVILEGE_TYPE_CORPUS_NORMAL,PRIVILEGE_TYPE_CORPUS_RESTRICTED) as $t)
+						if ($t != $info->type)
+							echo "\n\t\t\t\t\t<p>"
+	 							, '<a class="menuItem" href="index.php?admFunction=execute&function=update_privilege_access_level&args='
+ 								, $p, urlencode('#'), $t
+ 								, '&locationAfter=', urlencode('index.php?thisF=privilegeAdmin&uT=y')
+ 								, '&uT=y">[Change to '
+	 							, str_replace(' to corpus', '', $Config->privilege_type_descriptions[$t])
+	 							, ']</a>'
+	 							, "</p>\n\n\t\t\t\t\t<p class=\"spacer\">&nbsp;</p>\n"
+	 							;
+					?>
+					
+				</td>
+			</tr>
+			
+			<?php 
+			
+			break;
+			
+			
+			
+		case PRIVILEGE_TYPE_FREQLIST_CREATE:
+			
+			$header_text  = "Change size of frequency list that this privilege allows to be created";
+			$current_desc = "This privilege currently allows creation of frequency lists for subcorpora up to <b>"
+ 								. number_format($info->scope_object) . "</b> tokens in extent.";
+			$label_text   = "Enter a new size limit:";
+
+			/* INTENTIONAL FALL-THROUGH -- THESE USE THE SAME FORM WITH DIFFERENCES OF WORDING */
+			
+		case PRIVILEGE_TYPE_UPLOAD_FILE:
+
+			if (PRIVILEGE_TYPE_UPLOAD_FILE == $info->type)
+			{
+				$header_text  = "Change size of file that this privilege allows to be uploaded";
+				$current_desc = "This privilege currently allows files up to <b>"
+ 								. number_format($info->scope_object/(1024.0*1024.0), 2) . " MB</b> to be uploaded.";;
+				$label_text   = "Enter a new maximum file size (in bytes)";
+			}
+			
+			
+			
+			?>
+			<tr>
+				<th class="concordtable" colspan="2">
+					<?php echo $header_text; ?>
+				</th>
+			</tr>
+			
+			<form action="index.php" method="GET">
+				<tr>				
+					<td class="concordgeneral">
+						<p class="spacer">&nbsp;</p>
+						<p><?php echo $current_desc; ?></p>
+						<p>
+							<?php echo $label_text; ?>&nbsp;<input type="text" name="newMax"/>
+						</p>
+						<p class="spacer">&nbsp;</p>
+					</td>
+					<td class="concordgeneral" align="center">
+						<p class="spacer">&nbsp;</p>
+						<p><input type="submit" value="Update"/></p>
+						<p class="spacer">&nbsp;</p>
+					</td>
+				</tr>
+				<input type="hidden" name="admFunction" value="updatePrivilegeIntMax" />
+				<input type="hidden" name="privilege" value="<?php echo $p; ?>" />
+				<input type="hidden" name="uT" value="y" />
+			</form>
+			
+			<?php			
+			if (PRIVILEGE_TYPE_UPLOAD_FILE == $info->type)
+			{
+				?>
+				
+				<form action="index.php" method="GET">
+					<tr>				
+						<td class="concordgeneral">
+							<p class="spacer">&nbsp;</p>
+							<p>
+								Or select a commonly-used size:&nbsp;
+								<select name="newMax">
+									<option value="524288"  >0.5 MB</option>
+									<option value="1048576" >1   MB</option>
+									<option value="2097152" >2   MB</option>
+									<option value="4194304" >4   MB</option>
+									<option value="10485760">10  MB</option>
+									<option value="20971520">20  MB</option>
+									<option value="41943040">40  MB</option>
+								</select>
+							</p>
+							<p class="spacer">&nbsp;</p>
+						</td>
+						<td class="concordgeneral" align="center">
+							<p class="spacer">&nbsp;</p>
+							<p><input type="submit" value="Update"/></p>
+							<p class="spacer">&nbsp;</p>
+						</td>
+					</tr>
+					<input type="hidden" name="admFunction" value="updatePrivilegeIntMax" />
+					<input type="hidden" name="privilege" value="<?php echo $p; ?>" />
+					<input type="hidden" name="uT" value="y" />
+				</form>
+				
+				<?php 
+			}
+
+			break;
+			
+			
+			
+		case PRIVILEGE_TYPE_CQP_BINARY_FILE:
+			/* do nowt */
+			break;
+		}
+		
+		?>
+		
+		
+<!-- 		<tr> -->
+<!-- 			<td class="concordgeneral" align="center"> -->
+<!-- 				&nbsp;<br/> -->
+<!-- 				This function is under construction. -->
+<!-- 				<br/>&nbsp; -->
+<!-- 			</td> -->
+<!-- 		</tr> -->
 	</table>
 	<?php
 }
@@ -4271,6 +5226,52 @@ function printquery_statistic($type = 'user')
 }
 
 
+function printquery_historyclear()
+{
+	?>
+	<table class="concordtable" width="100%">
+		<tr>
+			<th class="concordtable">
+				Clear the Query History
+			</th>
+		</tr>
+		<tr>
+			<td class="concordgrey">
+				<p>Please note the following points:</p>
+				<ul>
+					<li>The Query History logs all queries performed by all users.</li>
+					<li>CQPweb's &ldquo;Usage statistics&rdquo; are produced by analysing the Query History.</li>
+					<li>Deleting the Query History will re-set all the statistics to a zero baseline.</li>
+					<li><em>But</em> it will also mean that <em>all</em> users lose their record of previously-performed queries.</li>
+					<li>Clearing the Query History affects <b>all</b> users and <b>all</b> corpora.</li>
+					<li>
+						You should not use this control unless you know what you're doing 
+						and you are <em>sure</em> you want to delete the entire Query History.
+					</li> 
+				</ul>
+				<p>Are you sure you want to clear the Query History?</p>
+			</td>
+		</tr>
+		<tr>
+			<td class="concordgeneral" align="center">
+				<form action="index.php" method="get">
+					<br/>
+					<input type="checkbox" name="sureyouwantto" value="yes"/>
+					Yes, I'm sure I want to do this.
+					<br/>&nbsp;<br/>
+					<input type="submit" value="I am definitely sure I want to clear the entire Query History." />
+					<br/>
+					<input type="hidden" name="admFunction" value="clearQueryHistory" />
+					<input type="hidden" name="uT" value="y" />
+				</form>
+			</td>
+		</tr>
+	</table>					
+		
+	<?php
+}
+
+
 function printquery_phpconfig()
 {
 	if (isset ($_GET['showPhpInfo']) && $_GET['showPhpInfo'])
@@ -4315,6 +5316,14 @@ function printquery_phpconfig()
 			</td>
 			<td class="concordgeneral">
 				<?php echo php_ini_loaded_file(); ?>
+			</td>
+		</tr>
+		<tr>
+			<td colspan="2" class="concordgrey" align="center">
+				&nbsp;<br/>
+				The active settings shown below may not match those in the INI file if the latter have been overridden
+				(e.g. by your web server's configuration).
+				<br/>&nbsp;	
 			</td>
 		</tr>
 		
@@ -4468,12 +5477,12 @@ function printquery_opcodecache()
 				&nbsp;<br/>
 				Opcode caches are tools to speed up PHP applications like CQPweb. Several different ones are available,
 				but any individual server will only use <i>one</i>. 
-				<b>APC</b>, <b>OPcache</b> and <b>WinCache</b> are three opcode caches that can be monitored from within CQPweb.
+				<b>OPcache</b>, <b>APC</b>,  and <b>WinCache</b> are three opcode caches that can be monitored from within CQPweb.
 				<?php
 				echo '<ul>'
-					, '<li><b>APC</b> '     , $mode == 'apc'      ? 'is <u>active</u>' : 'is inactive or unavailable', '.</li>'
 					, '<li><b>OPcache</b> ' , $mode == 'opcache'  ? 'is <u>active</u>' : 'is inactive or unavailable', '.</li>'
 					, '<li><b>WinCache</b> ', $mode == 'wincache' ? 'is <u>active</u>' : 'is inactive or unavailable', '.</li>'
+					, '<li><b>APC</b> '     , $mode == 'apc'      ? 'is <u>active</u>' : 'is inactive or unavailable', '.</li>'
 					, "</ul>\n"
  					;
 				?>
@@ -4644,12 +5653,6 @@ function printquery_opcodecache()
 }
 
 
-//function printquery_advancedstats()
-//{
-//
-//	// TODO
-//
-//}
 
 
 function printquery_message()

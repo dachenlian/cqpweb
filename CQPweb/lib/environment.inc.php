@@ -47,7 +47,8 @@
 /*
  * version number of CQPweb 
  */
-define('CQPWEB_VERSION', '3.2.11');
+define('CQPWEB_VERSION', '3.2.30');
+
 
 /*
  * FLAGS for cqpweb_startup_environment()
@@ -128,6 +129,13 @@ define('PRIVILEGE_TYPE_CORPUS_FULL',           3);
 /* note that the above 4 definitions create a greater-than/less-than sequence. Intentionally so. */
 
 define('PRIVILEGE_TYPE_FREQLIST_CREATE',       4);
+define('PRIVILEGE_TYPE_UPLOAD_FILE',           5);
+// TODO these are the new uns, not linked in yet, still thinking about.......
+// just one "DISK SPACE" to account for how much cache the user can use, which then applies to saved databases as well as saved queries?
+// YES, but let it have scope over different cache types!!
+define('PRIVILEGE_TYPE_DISK_SPACE',            6);
+// whereas this one has no scope, as it takes its space-limit from the upload file privilege.
+define('PRIVILEGE_TYPE_CQP_BINARY_FILE',       7);
 
 
 /* 
@@ -149,11 +157,27 @@ define('CACHE_STATUS_CATEGORISED',             2);
  * misc constants
  */
 
+
 /** The common date-time format string used around CQPweb. */
 define('CQPWEB_UI_DATE_FORMAT', 'Y-M-d H:i:s');
 
+/** Regular expression used in multiple places to interpret CQP concordance.
+ *  Used with PREG_PATTERN_ORDER, it puts tokens in $m[4]; xml-tags-before in $m[1]; xml-tags-after in $m[5] */
+/*
+define('CQP_INTERFACE_WORD_REGEX', '|((<\S+?( \S+?)?>)*)([^ <]+)((</\S+?>)*) ?|'); // old version, failed if XML value had a space in it.
+*/
+define('CQP_INTERFACE_WORD_REGEX', '|((<\S+?( [^>]*?)?>)*)([^ <]+)((</\S+?>)*) ?|');
+/* note, this is prone to interference from literal < in the index.  Also note that we need to allow for empty strings as annotations, hence [^>]* rather than [^>]+
+ * TODO: 
+ * Will be fixable when we have XML concordance output in CQP v 4.0 */
 
+/** Regular expression used in multiple places to split apart words/annotations
+ *  in CQP concordance format. First match = the word; second match = the annotation. */
+define('CQP_INTERFACE_EXTRACT_TAG_REGEX', '/\A(.*)\/([^\/]*)\z/');
 
+/** Magic number: string that should match against the first four bytes of a CQP query file. 
+ *  NB. This is not the "original", pre-1995 format, but the "plus one" format introduced in 1995. */
+define('CQP_INTERFACE_FILE_MAGIC_NUMBER', "\x89\x46\x28\x02");
 
 
 
@@ -172,11 +196,9 @@ define('CQPWEB_UI_DATE_FORMAT', 'Y-M-d H:i:s');
  * 
  * The instantiation should always be the global $Config object.
  * 
- * Has only one function, its constructor, which loads all the config settings.
+ * This class's constructor loads all the config settings from file.
  * 
  * Config settings in the database are NOT loaded by the constructor.
- * 
- * 
  */
 class CQPwebEnvConfig
 {
@@ -217,7 +239,7 @@ class CQPwebEnvConfig
 		foreach ($variables as $k => $v)
 			$this->$k = $v;
 		/* this also creates run_location as a member.... */
-
+		
 		/* check compulsory config variables */
 		$compulsory_config_variables = array(
 				'superuser_username',
@@ -232,7 +254,7 @@ class CQPwebEnvConfig
 			);
 		foreach ($compulsory_config_variables as $which)
 			if (!isset($this->$which))
-				exiterror_general("CRITICAL ERROR: \$$which has not been set in the configuration file.");
+				exiterror("CRITICAL ERROR: \$$which has not been set in the configuration file.");
 
 
 		/* and now, let's organise the directory variables into something saner */
@@ -260,6 +282,19 @@ class CQPwebEnvConfig
 		}
 		
 		/* add further system config here. */
+	}
+	
+	
+	/* Getter methods: only for variables more complex than a straightforward read. */
+	
+	/**
+	 * Returns an integer containing the RAM limit to be passed to CWB programs that
+	 * allow a RAM limit to be set - note, the flag (-M or whatever) is not returned,
+	 * just the number of megabytes as an integer.
+	 */
+	public function get_cwb_memory_limit()
+	{
+		return ( ('cli' == php_sapi_name()) ? $this->cwb_max_ram_usage_cli : $this->cwb_max_ram_usage );
 	}
 }
 
@@ -295,7 +330,7 @@ class CQPwebEnvUser
 		else
 		{
 			/* look for logged on user */
-			if ( (! isset($_COOKIE[$Config->cqpweb_cookie_name])) ||  false === ($checked = check_user_cookie_token($_COOKIE[$Config->cqpweb_cookie_name])))
+			if ((!isset($_COOKIE[$Config->cqpweb_cookie_name])) || false === ($checked = check_user_cookie_token($_COOKIE[$Config->cqpweb_cookie_name])))
 			{
 				/* no one is logged in */
 				$username = '__unknown_user'; // TODO maybe change this
@@ -347,25 +382,51 @@ class CQPwebEnvUser
 		return ( PHP_SAPI=='cli' || ($this->logged_in && user_is_superuser($this->username)) );
 	}
 	
+	
+	public function has_cqp_binary_privilege()
+	{
+		if ($this->is_admin())
+			return true;
+		foreach ($this->privileges as $p)
+			if (PRIVILEGE_TYPE_CQP_BINARY_FILE == $p->type)
+				return true;
+		return false;
+	}
+	
 	/**
 	 * Returns the size, in tokens, of the largest sub-corpus for which this user
 	 * allowed to create frequency lists.
 	 */
 	public function max_freqlist()
 	{
+		return $this->max_value_of_integer_scoped_privilege(PRIVILEGE_TYPE_FREQLIST_CREATE);
+	}
+	
+	/**
+	 * Returns the size, in bytes, of the biggest file this user is allowed to upload into CQPweb space.
+	 */
+	public function max_upload_file()
+	{
+		return $this->max_value_of_integer_scoped_privilege(PRIVILEGE_TYPE_UPLOAD_FILE);
+	}
+	
+	private function max_value_of_integer_scoped_privilege($type)
+	{
+		/* array storing maxima for reuse */
 		static $max = NULL;
-		if (! is_null($max) )
-			return $max;
 		
-		/* we begin with a ridiculously low value, so that any privilege will be higher */
-		$max = 1000;
-
-		foreach($this->privileges as $p)
-			if ($p->type == PRIVILEGE_TYPE_FREQLIST_CREATE)
-				if ($p->scope_object > $max)
-					$max = $p->scope_object;
-		
-		return $max;
+		if (is_null($max))
+		{		
+			$max = array(PRIVILEGE_TYPE_FREQLIST_CREATE => 0, PRIVILEGE_TYPE_UPLOAD_FILE => 0);
+			/* we need a key in the array for each type of privilege whose scope-object is an integer;
+			 * note that we begin with a ridiculously low value, so that any privilege will be higher */
+				
+			foreach($this->privileges as $p)
+				if (isset($max[$p->type]) )
+					if ( (int)$p->scope_object > $max[$p->type])
+						$max[$p->type] = (int)$p->scope_object;
+		}
+		return $max[$type];
 	}
 }
 
@@ -415,6 +476,7 @@ class CQPwebEnvCorpus
 			 * I can't think of any...
 			 */
 			$this->name = cqpweb_handle_enforce($_GET['c']);
+			// TODO c will have to be an id number rather than a name at some point...
 		}
 		else 
 		{
@@ -463,8 +525,9 @@ class CQPwebEnvCorpus
 				/* fallthrough list for do-nothing cases */
 				case 'corpus':
 					break;
-				/* note that here in the global object, `corpus` ==> $this->name.
-				 * but in small objects for non-environment corpora, it stays as `corpus`. */
+				/* note that here in the global object, `corpus` ==> $this->name ,
+				 * but in small objects for non-environment corpora, it stays as `corpus`.
+				 * This is annoying and confusing, and is for historical reasons.  */
 
 				/* fallthrough list for bools */
 				case 'is_user_corpus':
@@ -477,6 +540,7 @@ class CQPwebEnvCorpus
 				case 'visualise_translate_in_concordance':
 				case 'visualise_translate_in_context':
 				case 'visualise_position_labels':
+				case 'visualise_break_context_on_punc':
 					$this->$k = (bool) $v;
 					break;
 
@@ -566,6 +630,7 @@ class CQPwebEnvCorpus
 		}
 	}
 	
+	
 	/**
 	 * Sets up the access_level member to the privilege type indicating
 	 * the HIGHEST level of access to which the currently-logged-in user
@@ -584,7 +649,7 @@ class CQPwebEnvCorpus
 			return;
 		}
 		
-		/* otherwise we must dig through the privilweges owned by this user. */
+		/* otherwise we must dig through the privileges owned by this user. */
 		
 		/* start by assuming NO access. Then look for the highest privilege this user has. */
 		$this->access_level = PRIVILEGE_TYPE_NO_PRIVILEGE;
@@ -642,7 +707,7 @@ class CQPwebEnvCorpus
  */
 function declare_plugin($class, $type, $path_to_config_file = NULL)
 {
-	//TODO why is this a global and n ot under config or summat?
+	//TODO why is this a global and not under config or summat?
 	global $plugin_registry;
 	if (!isset($plugin_registry))
 		$plugin_registry = array();
@@ -737,11 +802,20 @@ function cqpweb_startup_environment($flags = CQPWEB_STARTUP_NO_FLAGS, $run_locat
 	// TODO, move into here the setup of plugins
 	// (so this is done AFTER all functions are imported, not
 	// in the defaults.inc.php file)
+	
 
 	/* create global settings options */
 	$Config = new CQPwebEnvConfig($run_location);
 	
 	
+	/* check for "switched-off" status; if we are switched off, then just spit out the "switched off" message. */
+	if ($Config->cqpweb_switched_off && $Config->run_location != RUN_LOCATION_CLI)
+	{
+		include('../lib/switched-off.inc.php');
+		exit;
+	}
+	/* we have to do this BEFORE connecting to anything... */
+
 	
 	/*
 	 * Now that we have the $Config object, we can connect to MySQL.
@@ -793,7 +867,7 @@ function cqpweb_startup_environment($flags = CQPWEB_STARTUP_NO_FLAGS, $run_locat
 			exiterror_bad_url();
 	if ($flags & CQPWEB_STARTUP_CHECK_ADMIN_USER)
 		if (!$User->is_admin())
-			exiterror_general("You do not have permission to use this part of CQPweb.");
+			exiterror("You do not have permission to use this part of CQPweb.");
 	
 	/* end of function cqpweb_startup_environment */
 }

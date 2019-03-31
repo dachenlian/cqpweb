@@ -73,7 +73,7 @@ function corpus_make_freqtables($corpus)
 	$attribute = array_merge(array('word'), array_keys(get_corpus_annotations($corpus)));
 	
 	/* create a temporary table */
-	$temp_tablename = "temporary_freq_corpus_{$corpus}";
+	$temp_tablename = "__tempfreq_{$corpus}";
 	do_mysql_query("DROP TABLE if exists $temp_tablename");
 
 	$sql = "CREATE TABLE $temp_tablename (
@@ -158,6 +158,15 @@ function corpus_make_freqtables($corpus)
 
 	/* delete temporary ungrouped table */
 	do_mysql_query("DROP TABLE if exists $temp_tablename");
+	
+	/* log the amount of disk space in use */
+	update_corpus_freqtable_size($corpus);
+	
+	/* log the n of types in corpus_info. */
+	update_corpus_n_types($corpus);
+	/* the above action does not, strictly, belong here. 
+	 * But freq table set up is necessary for it to work.
+	 * So, we might as well set the n types immediately. */
 }
 
 
@@ -454,7 +463,8 @@ function make_cwb_freq_index($corpus)
 	}
 
 	/* names of the created corpus (lowercase, upppercase) and various paths for commands */
-	$freq_corpus_cqp_name_lc = strtolower($c_info->cqp_name) . '__freq';
+// 	$freq_corpus_cqp_name_lc = strtolower($c_info->cqp_name) . '__freq';
+	$freq_corpus_cqp_name_lc = $corpus . '__freq';
 	$freq_corpus_cqp_name_uc = strtoupper($freq_corpus_cqp_name_lc);
 	
 	$datadir = "{$Config->dir->index}/$freq_corpus_cqp_name_lc";
@@ -469,9 +479,11 @@ function make_cwb_freq_index($corpus)
 	unset($cqp);
 
 
-	/* delete any previously existing corpus of this name, then make the data directory ready */
+	/* delete any previously existing corpus datadir/regfile of this name, then make the data directory ready */
 	if (is_dir($datadir))
-		cwb_uncreate_corpus($freq_corpus_cqp_name_lc);
+		recursive_delete_directory($datadir);
+	if (is_file($regfile))
+		unlink($regfile);
 
 	if (! mkdir($datadir))
 		exiterror("CQPweb could not create a directory for the frequency index. Check filesystem permissions!");
@@ -516,6 +528,7 @@ function make_cwb_freq_index($corpus)
 		$line = trim($line, "\r\n ");
 		/* we do not trim off \t because it might be a column terminator */
 
+
 		if (preg_match('/^<text_id\s+(\w+)>$/', $line, $m) > 0)
 		{
 			/* extract the id from the preceding regex using (\w+) */
@@ -527,7 +540,7 @@ function make_cwb_freq_index($corpus)
 			/* do the things to be done at the end of each text */
 			
 			if ( ! isset($current_id) )
-				exiterror("Unexpected /text_id Hello end-tag while creating corpus $freq_corpus_cqp_name_uc! -- creation aborted");
+				exiterror("Unexpected /text_id end-tag while creating corpus $freq_corpus_cqp_name_uc! -- creation aborted");
 			
 			if (false === fputs($dest, "<text id=\"$current_id\">\n"))
 				exiterror("Freq index creation: Could not write [text] to CWB encode destination pipe");
@@ -566,13 +579,10 @@ function make_cwb_freq_index($corpus)
 			if ( ! isset($current_id) )
 			{
 				/* this is the only thing that will validly occur outside of a <text> */
-				if ($line == '</corpus>') {
+				if ($line == '</corpus>')
 					continue;
-				}
-				else {
-					echo "WARNING! Unexpected line outside text_id tags: \"$line\"";
-					// exiterror("Unexpected line outside text_id tags while creating corpus $freq_corpus_cqp_name_uc! -- creation aborted");
-				}
+				else
+					exiterror("Unexpected line outside text_id tags while creating corpus $freq_corpus_cqp_name_uc! -- creation aborted");
 			}
 			/* otherwise... */
 
@@ -598,7 +608,7 @@ function make_cwb_freq_index($corpus)
 
 	/* system commands for everything else that needs to be done to make it a good corpus */
 
-	$mem_flag = '-M ' . get_cwb_memory_limit();
+	$mem_flag = '-M ' . $Config->get_cwb_memory_limit();
 	$cmd_makeall  = "\"{$Config->path_to_cwb}cwb-makeall\" $mem_flag -r \"{$Config->dir->registry}\" -V $freq_corpus_cqp_name_uc ";
 	$cmd_huffcode = "\"{$Config->path_to_cwb}cwb-huffcode\"          -r \"{$Config->dir->registry}\" -A $freq_corpus_cqp_name_uc ";
 	$cmd_pressrdx = "\"{$Config->path_to_cwb}cwb-compress-rdx\"      -r \"{$Config->dir->registry}\" -A $freq_corpus_cqp_name_uc ";
@@ -606,19 +616,29 @@ function make_cwb_freq_index($corpus)
 
 	/* make the indexes & compress */
 	$output = array();
-	exec($cmd_makeall,  $output);
-	exec($cmd_huffcode, $output);
-	exec($cmd_pressrdx, $output);
-
-	print_debug_message("Compression of the frequency-list-by-text CWB database is now complete...");
-
 	
+	exec($cmd_makeall,  $output);
+	
+	exec($cmd_huffcode, $output);
+	print_debug_message("Stage 1 (huffman code) compression of the frequency-list-by-text CWB database is now complete...");
 	/* delete the intermediate files that we were told we could delete */
-	foreach ($output as $o)
-		if (preg_match('/!! You can delete the file <(.*)> now./', $o, $m) > 0)
-			if (is_file($m[1]))
-				unlink($m[1]);
-	unset ($output);
+	delete_cwb_uncompressed_data($output);
+// 	foreach ($output as $o)
+// 		if (preg_match('/!! You can delete the file <(.*)> now./', $o, $m))
+// 			if (is_file($m[1]))
+// 				unlink($m[1]);
+
+	exec($cmd_pressrdx, $output);
+	print_debug_message("Stage 2 (compress-rdx) compression of the frequency-list-by-text CWB database is now complete...");
+	/* delete the intermediate files that we were told we could delete */
+	delete_cwb_uncompressed_data($output);
+// 	foreach ($output as $o)
+// 		if (preg_match('/!! You can delete the file <(.*)> now./', $o, $m))
+// 			if (is_file($m[1]))
+// 				unlink($m[1]);
+	
+	/* now we are done indexing "__freq", update the record of disk space use to include it */
+	update_corpus_index_size($corpus);
 	
 	/* the new CWB frequency-list-by-text "corpus" is now finished! */
 	print_debug_message("Done with the frequency-list-by-text CWB database...");
@@ -659,7 +679,7 @@ function make_cwb_freq_index($corpus)
 
 	$freq_text_index = "freq_text_index_$corpus";
 	
-	do_mysql_query("drop table if exists $freq_text_index");
+	do_mysql_query("drop table if exists `$freq_text_index`");
 
 	
 	$creation_query = "CREATE TABLE `$freq_text_index` 
@@ -678,6 +698,8 @@ function make_cwb_freq_index($corpus)
 
 	unlink($index_filename);
 
+	/* update the size of the freq tables */
+	update_corpus_freqtable_size($corpus);
 
 	/* turn the limit back on */
 	php_execute_time_relimit();
@@ -723,7 +745,7 @@ function get_freq_index_positionlist_for_text_list($text_list, $corpus)
 	foreach(array_chunk($text_list, 20) as $chunk_of_texts)
 	{
 		/* first step: convert list of texts to an sql where clause */
-		$textid_whereclause = translate_itemlist_to_where($chunk_of_texts, true);
+		$textid_whereclause = translate_itemlist_to_where($chunk_of_texts);
 		
 		/* second step: get that chunk's begin-and-end points in the specially-indexed cwb per-file freqlist corpus */
 		$result = do_mysql_query("select start, end from freq_text_index_{$corpus} where $textid_whereclause");
@@ -748,24 +770,37 @@ function get_freq_index_positionlist_for_text_list($text_list, $corpus)
  * Check if a cwb-frequency-"corpus" exists for the specified lowercase corpus name.
  * 
  * For true to be returned, BOTH the cwb "__freq" corpus AND the corresponding text
- * index must exist.
+ * index must exist. Both the registry and the index directory are checked 
+ * (but not the *contents* of the index directory.)
  * 
  * Note: does not work for subcorpora, because they have neither a CWB "__freq" table,
  * nor a freq text index!
  */
 function check_cwb_freq_index($corpus_name)
 {
-	if (! cwb_corpus_exists($corpus_name . '__freq') )
+	global $Config;
+	
+	$freq_corpus = $corpus_name . '__freq';
+		
+	/* first, the CWB checks. */
+		
+	/* if the registry file does not exist, the corpus definitely doesn't */
+	if (! is_file("{$Config->dir->registry}/$freq_corpus"))
 		return false;
+
+	/* now check for the existence of the data directory */
+	if (! is_dir("{$Config->dir->index}/$freq_corpus"))
+		return false;
+	/* the __freq corpus is ALWAYS inside the CQPweb datadir, 
+	 * so we do not need to worry about checking for "cwb_external" */
+
+	/* now, the mysql check */
 	 
-	$mysql_table = "freq_text_index_$corpus_name";
-	
-	$result = do_mysql_query("show tables");
-	while ( false !== ($r = mysql_fetch_row($result)))
-		if ($r[0] == $mysql_table)
-			return true;
-	
-	return false;
+	if ( 1 >  mysql_num_rows(do_mysql_query("show tables like 'freq_text_index_$corpus_name'")) )
+		return false;
+
+	/* neither the cwb nor the mysql check returned false, so we can return true. */
+	return true;
 }
 
 
@@ -816,7 +851,7 @@ function get_freqtable_size($freqtable_name)
 	$result = do_mysql_query("SHOW TABLE STATUS LIKE '$freqtable_name%'");
 	/* note the " % " */
 
-	while ( ($info = mysql_fetch_assoc($result)) !== false)
+	while ( false !== ($info = mysql_fetch_assoc($result)) )
 		$size += ((int) $info['Data_length'] + $info['Index_length']);
 
 	return $size;
@@ -962,11 +997,8 @@ function publicise_this_corpus_freqtable($description)
 	global $Corpus;
 
 	$description = mysql_real_escape_string($description);
-	
-	$sql_query = "update corpus_info set public_freqlist_desc = '$description'
-		where corpus = '{$Corpus->name}'";
 		
-	do_mysql_query($sql_query);
+	do_mysql_query("update corpus_info set public_freqlist_desc = '$description' where corpus = '{$Corpus->name}'");
 }
 
 
@@ -994,7 +1026,7 @@ function publicise_freqtable($name, $switch_public_on = true)
 
 	$name = mysql_real_escape_string($name);
 	
-	$sql = "update saved_freqtables set public = " . ($switch_public_on ? 1 : 0) . "where freqtable_name = '$name'";
+	$sql = "update saved_freqtables set public = " . ($switch_public_on ? 1 : 0) . " where freqtable_name = '$name'";
 	
 	do_mysql_query($sql);
 
@@ -1079,30 +1111,6 @@ function list_freqtabled_subcorpora()
 	
 	return $list;
 }
-
-
-// /**
-//  * Find the freqtable name for a given subcorpus belonging to this user and this corpus. 
-//  * 
-//  * Returns false if it was not found.
-//  */
-// function get_subcorpus_freqtable($subcorpus)
-// {
-// 	global $Corpus;
-// 	global $User;
-	
-// 	$subcorpus = mysql_real_escape_string($subcorpus);
-	
-// 	$sql = "select freqtable_name from saved_freqtables where corpus = '{$Corpus->name}' and user = '{$User->username}' and subcorpus = '$subcorpus'";
-// 	$result = do_mysql_query($sql);
-	
-// 	if (mysql_num_rows($result) < 1)
-// 		return false;
-	
-// 	list($name) = mysql_fetch_row($result);
-	
-// 	return $name;
-// }
 
 
 

@@ -31,18 +31,22 @@
  */
 
 
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
+
 require('../lib/environment.inc.php');
 
 
 /* include all function files */
 include('../lib/admin-lib.inc.php');
 include('../lib/cqp.inc.php');
-include('../lib/cwb.inc.php');
 include('../lib/exiterror.inc.php');
 include('../lib/freqtable.inc.php');
 include('../lib/html-lib.inc.php');
 include('../lib/library.inc.php');
 include('../lib/metadata.inc.php');
+include('../lib/subcorpus.inc.php');
 include('../lib/user-lib.inc.php');
 include('../lib/templates.inc.php');
 include('../lib/xml.inc.php');
@@ -369,6 +373,34 @@ case 'createXmlIdlinkTable':
 	
 	break;
 
+
+case 'updateXmlIdlinkCategoryDescriptions':
+
+	foreach($_GET as $key => $val_desc)
+	{
+		if (substr($key, 0, 5) !== 'desc-')
+			continue;
+		list(, $att, $field, $val_handle) = explode('-', $key);
+		
+		$att        = mysql_real_escape_string($att);
+		$field      = mysql_real_escape_string($field);
+		$val_handle = mysql_real_escape_string($val_handle);
+		$val_desc   = mysql_real_escape_string($val_desc);
+		
+		$sql = "update idlink_values set description='$val_desc' 
+			where corpus       = '{$Corpus->name}' 
+			and   att_handle   = '$att'
+			and   field_handle = '$field'
+			and   handle       = '$val_handle'";
+		do_mysql_query($sql);
+	}
+
+	$next_location = "index.php?thisQ=manageXml&uT=y";
+	
+	break;
+
+
+	
 
 
 /* ============== *

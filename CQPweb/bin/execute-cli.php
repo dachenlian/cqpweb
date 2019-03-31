@@ -42,17 +42,16 @@ if (php_sapi_name() != 'cli')
 
 if (!isset($argv[1]))
 {
-	echo "Usage: cd path/to/a/corpus/directory && php ../lib/execute-cli.php function arg1 arg2 ...\n\n";
+	echo "Usage: cd path/to/a/corpus/directory && php ../bin/execute-cli.php function arg1 arg2 ...\n\n";
 	exit(1);
 }
 
-if (isset($_GET))
-	unset($_GET);
+$_GET = array();
 
 $_GET['function'] = $argv[1];
 unset($argv[0],$argv[1]);
 if (!empty($argv))
-	$_GET['args'] = implode('#', $argv);
+	$_GET['args'] = implode('#', $argv); // TODO, I think we can now just pass in an array to execute, can't we???
 unset($argc, $argv);
 
 $execute_cli_is_running = true;
@@ -62,4 +61,3 @@ require('../lib/execute.inc.php');
 //TODO use output buffering to capture the results, strip html and print?
 
 
-?>

@@ -32,6 +32,10 @@
 
 
 
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
+
 
 
 require('../lib/environment.inc.php');
@@ -58,7 +62,7 @@ $qname = safe_qname_from_get();
 /* get the query record so we can find out how many hits we are thinning */
 $query_record = QueryRecord::new_from_qname($qname);
 if (false === $query_record)
-	exiterror_general("The specified query $qname was not found in cache!");
+	exiterror("The specified query $qname was not found in cache!");
 
 $hits = $query_record->hits();
 

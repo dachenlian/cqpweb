@@ -42,17 +42,17 @@ require('../lib/library.inc.php');
  * 
  * Some come via redirect from various forms; others come via admin action.
  * 
- * The actions are controlled via switcyh and mostly work by sorting through
+ * The actions are controlled via switch and mostly work by sorting through
  * the "_GET" parameters, and then calling the underlying functions
  * (mostly in user-lib).
  */
 
 
-$script_called_from_admin = (isset ($_GET['userFunctionFromAdmin']) && $_GET['userFunctionFromAdmin'] == 1); 
+$script_called_from_admin = (isset ($_GET['userFunctionFromAdmin']) && $_GET['userFunctionFromAdmin'] == 1);
 
 
 /* a slightly tricky one, since functions here are accessible with or without login,
- * and also by admin only (in some caseS) and by anyone (in others).
+ * and also by admin only (in some cases) and by anyone (in others).
  * 
  * Either admin did it, in which case we need admin login; or new user did it, 
  * in which case we do not need any login at all ........... 
@@ -212,9 +212,14 @@ case 'newUser':
 	$email = trim($_GET['newEmail']);
 	if (empty($email))
 		exiterror("The email address for a new account cannot be an empty string!");
-	
-	// TODO make it a config option whether or not the same email address can have more than one acct ... 
-	// For now, it universally can.
+	/* If CQPweb is configured to allow only one account for any given email address, we need to check the uniqueness of this email! */
+	if ($Config->account_create_one_per_email)
+	{
+		$e = mysql_real_escape_string($email);
+		if ( 0 < mysql_num_rows(do_mysql_query("select id from user_info where email = '$e'")) )
+			exiterror("The email address you supplied is already associated with a user account. "
+					. "Please use your existing account, or provide a different email address for your new account.");
+	}
 	
 	/* OK, all 3 things now collected, so we can call the sharp-end function... */
 
@@ -301,6 +306,7 @@ case 'newUser':
 		$next_location = "index.php?thisF=showMessage&message=" . urlencode("User account '$new_username' has been created.") . "&uT=y";
 	else
 		$next_location = "index.php?extraMsg=" . urlencode("User account '$new_username' has been created.") . "&uT=y";
+	
 	break;
 
 
@@ -375,7 +381,14 @@ case 'resetUserPassword':
 
 	/* 
 	 * change a user's password to the new value specified. 
+	 * 
 	 */
+
+	/* Note that when a user's password is changed, all their existing log-in cookies are invalidated.
+	 * Normally, this is exceptionless; we set this variable now, to allow the case where one exception
+	 * is permitted to be set later on.
+	 */
+	$logout_exception = false;
 	
 	/* there are big differences in the checks needed between calling this from admin and from a normal login.... 
 	 * This if/else contains just the checks that everything is OK and in place before we call password-reset function. */
@@ -383,11 +396,13 @@ case 'resetUserPassword':
 	{
 		if ( ! $User->is_admin())
 			exiterror("You do not have permission to use that function.");
+		/* NB. The above is probably superfluous as it will have been checked by the startup-environment function. */
 		if ( ! isset($_GET['userForPasswordReset'], $_GET['newPassword']) )
 			exiterror("Badly-formed password reset request. Please go back and try again.");
 		if ( ! in_array($_GET['userForPasswordReset'], get_list_of_users()) )
 			exiterror("Invalid username!");
 		$next_location = 'index.php?thisF=userAdmin&uT=y';
+		
 	}
 	else
 	{
@@ -411,6 +426,10 @@ case 'resetUserPassword':
 			
 			if ( false === check_user_password($User->username, $_GET['oldPassword']) )
 				exiterror("The existing password you entered was not correct. Please go back and try again.");
+			
+			/* and this is the case where we allow one session to persist. This is indicated by putting
+			 * the current cookie-token into the variable that will be passed to the "invalidate" function below. */
+			$logout_exception = $_COOKIE[$Config->cqpweb_cookie_name];
 		}
 		else
 		{
@@ -436,6 +455,8 @@ case 'resetUserPassword':
 	/* if we got to here, one way or another, everything is OK. */
 	
 	update_user_password($_GET['userForPasswordReset'], $_GET['newPassword']);
+	
+	invalidate_user_cookie_tokens($_GET['userForPasswordReset'], $logout_exception);
 
 	break;
 
@@ -505,7 +526,7 @@ case 'requestPasswordReset':
 	$vcode_render = trim(chunk_split($vcode, 4, ' '));
 	$abs_url = url_absolutify("index.php?thisQ=lostPassword&uT=y");
 
-		$body = <<<HERE
+	$body = <<<HERE
 Dear $realname,
 
 A password reset has been requested for your user account on CQPweb.
@@ -527,8 +548,7 @@ The CQPweb User Administration System
 
 HERE;
 		
-		send_cqpweb_email($user_address, 'CQPweb: password reset', $body);
-
+	send_cqpweb_email($user_address, 'CQPweb: password reset', $body);
 
 	$next_location = "index.php?thisQ=lostPassword&showSentMessage=1&uT=y";
 	
@@ -586,8 +606,6 @@ case 'updateUserAccountDetails':
 		exiterror("Invalid user account details field provided.");
 	}
 	
-	
-	
 	break;
 	
 	
@@ -637,6 +655,7 @@ function parse_get_user_settings()
 			case 'use_tooltips':
 			case 'thin_default_reproducible':
 			case 'css_monochrome':
+			case 'freqlist_altstyle':
 				$settings[$m[1]] = (bool)$v;
 				break;
 					

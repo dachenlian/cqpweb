@@ -23,7 +23,10 @@
 
 
 
-/* initialise variables from settings files  */
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
+
 require('../lib/environment.inc.php');
 
 /* include function library files */
@@ -141,7 +144,7 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 				if (array_key_exists($_GET["c{$i}_att"], $possible_atts))
 					$att = $_GET["c{$i}_att"];
 				else
-					exiterror_general("The attribute you specified for column $i is not available.");
+					exiterror("The attribute you specified for column $i is not available.");
 				break;
 			}
 			
@@ -159,7 +162,7 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 			 * of the match. But this will not have any effect unless max_extended_context is very low, as
 			 * it only budges what is possible by one or two tokens, in most cases. */
 			if (abs($begin_offset) > $Corpus->max_extended_context)
-				exiterror_general("In this corpus, you are not permitted to tabulate positions with an offset greater than {$Corpus->max_extended_context}.");
+				exiterror("In this corpus, you are not permitted to tabulate positions with an offset greater than {$Corpus->max_extended_context}.");
 			
 			/* end point! */
 			if (! isset($_GET["c{$i}_endAnch"]))
@@ -170,7 +173,7 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 				exiterror_parameter("Invalid end anchor for column $i.");
 			$end_offset = ( isset($_GET["c{$i}_endOff"]) ? (int)$_GET["c{$i}_endOff"] : 0);
 			if (abs($end_offset) > $Corpus->max_extended_context)
-				exiterror_general("In this corpus, you are not permitted to tabulate positions with an offset greater than {$Corpus->max_extended_context}.");
+				exiterror("In this corpus, you are not permitted to tabulate positions with an offset greater than {$Corpus->max_extended_context}.");
 			
 			/* build range spec */
 			$range = ($begin_offset == 0 ? "$begin_anchor" : "{$begin_anchor}[$begin_offset]");
@@ -187,7 +190,7 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 			$column_specs[] = "$range $att $flags";
 		}
 		if (empty($column_specs))
-			exiterror_general("No columns have been defined for the tabulation!");
+			exiterror("No columns have been defined for the tabulation!");
 		else
 			$descriptor = implode(', ', $column_specs);
 	}
@@ -211,7 +214,7 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 				$descriptor .= ", match $k";
 			break;
 		default:
-			exiterror_general("You haev requested a standard tabulation format which was not recognised.");
+			exiterror("You have requested a standard tabulation format which was not recognised.");
 			break;
 		}
 	}

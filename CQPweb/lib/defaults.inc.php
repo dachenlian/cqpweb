@@ -57,6 +57,8 @@ $privilege_type_descriptions = array(
 	PRIVILEGE_TYPE_CORPUS_NORMAL     => "Normal access to corpus",
 	PRIVILEGE_TYPE_CORPUS_RESTRICTED => "Restricted access to corpus",
 	PRIVILEGE_TYPE_FREQLIST_CREATE   => "Permission to build frequency list",
+	PRIVILEGE_TYPE_UPLOAD_FILE       => "Permission to upload file",
+	PRIVILEGE_TYPE_CQP_BINARY_FILE   => "Access to CQP binary files",
 );
 /* some functions define alternative mapper hashes for their own purposes, note! */
 
@@ -108,6 +110,9 @@ $user_account_status_description_map = array (
 if (!isset($cqpweb_running_on_windows))
 	$cqpweb_running_on_windows = (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN');
 
+if (!isset($cqpweb_switched_off))
+	$cqpweb_switched_off = false;
+
 /* Is this copy of CQPweb available for access via the internet? */
 if (!isset($cqpweb_no_internet))
 	$cqpweb_no_internet = false;
@@ -128,6 +133,9 @@ if (!isset($account_create_captcha))
 if (! extension_loaded('gd'))
 	$account_create_captcha = false;
 
+if (!isset($account_create_one_per_email))
+	$account_create_one_per_email = false;
+
 
 
 /* name for cookies stored in users' browsers */
@@ -137,7 +145,7 @@ if (!isset($cqpweb_cookie_name))
 /* how long can someone stay logged in without visiting the site? */
 if (!isset($cqpweb_cookie_max_persist))
 	$cqpweb_cookie_max_persist = 5184000;
-
+/* 5184000 = 60 days */ 
 
 
 
@@ -218,6 +226,9 @@ if (!isset($mysql_utf8_set_required))
 	
 /* the next defaults are for tweaks to the system -- not so much critical! */
 
+if (! isset($show_match_strategy_switcher))
+	$show_match_strategy_switcher = false;
+
 if (!isset($hide_experimental_features))
 	$hide_experimental_features = false;
 
@@ -254,7 +265,8 @@ if (php_sapi_name() == 'cli')
 if (!isset($all_users_see_backtrace))
 	$all_users_see_backtrace = false;
 
-
+if (!isset($uploaded_file_bytes_to_show))
+	$uploaded_file_bytes_to_show = 102400;
 
 
 /* This is not a default - it cleans up the input, so we can be sure the root URL ends in a slash. */
@@ -286,11 +298,9 @@ if (!isset($default_history_per_page))
 	// TODO when these are documented, note that these are the defaults for user settings, and can be overridden.
 if (!isset($default_colloc_range))
 	$default_colloc_range = 5;
-
-if (!isset($default_colloc_calc_stat)) {
+	
+if (!isset($default_colloc_calc_stat))
 	$default_colloc_calc_stat = 6; 	/* {6 == log-likelihood} is default collocation statistic */
-}
-
 
 if (!isset($default_colloc_minfreq))
 	$default_colloc_minfreq = 5;
@@ -326,14 +336,19 @@ if (!isset($default_words_in_download_context))
  * -------------------------------- */
 
 /* Size limit of cache directory (based on CQP save-files only! not anything else that might be in that folder) */
-if (!isset($cache_size_limit))
-	$cache_size_limit = 6442450944;
-//TODO change to "query_cache_size_limit"; allow "cache_size_limit" for backwards compat
+if (!isset($query_cache_size_limit))
+{
+	/* this is what the variable used to be called: allow for backwards compatibility. */
+	if (!isset($cache_size_limit))
+		$cache_size_limit = 6442450944;
+	$query_cache_size_limit = $cache_size_limit;
+	unset($cache_size_limit);
+}
 
-/* Size limit for the MySQL restricition-data cache */
+
+/* Size limit for the MySQL restriction-data cache */
 if (!isset($restriction_cache_size_limit))
 	$restriction_cache_size_limit = 6442450944;
-//TODO change to "restriction_cache_size_limit"
 
 	
 /* Size limit for the frequency table cache: defaulting to 6 gig */
@@ -345,12 +360,19 @@ if (!isset($freqtable_cache_size_limit))
 	$freqtable_cache_size_limit = $mysql_freqtables_size_limit;
 	unset($mysql_freqtables_size_limit);
 }
-	
-//TODO add "db_cache_size_limit" (see also discussion in notes below)
 
+
+/* Size limit for the MySQL restriction-data cache */
+if (!isset($db_cache_size_limit))
+	$db_cache_size_limit = 6442450944;
+
+	
+/* ------------------------ *
+ * DB SIZE MAXIMUM SETTINGS *
+ * ------------------------ */
 
 // TODO the way DB maxima are calculated is dodgy, to say the least.
-// PROBLEMS: (1) names beginning $default that aren;t defaults is confusing, as above
+// PROBLEMS: (1) names beginning $default that aren;t defaults is confusing
 // (2) are the limits working as they should?
 
 /* Default maximum size for DBs -- can be changed on a per-user basis */
@@ -367,16 +389,16 @@ if (!isset($default_max_dbsize))
 if (!isset($colloc_db_premium))
 	$colloc_db_premium = 4;
 
-/* Total size (in rows) of database (distribution, colloc, etc) tables */
-/* before cached dbs are deleted: default is 100 of the biggest db possible  */
+/* Total size (in rows) of database (distribution, colloc, etc) tables
+ * before cached dbs are deleted: default is 100 of the biggest db possible  */
 if (!isset($default_max_fullsize_dbs_in_cache))
 	$default_max_fullsize_dbs_in_cache = 100;
-
-$mysql_db_size_limit = $default_max_fullsize_dbs_in_cache * $colloc_db_premium * $default_max_dbsize;
-// TODO change this to a more transparent byte-cache like the cache for files.
 // TODO when doing this note: $default_max_dbsize is inserted into the User profile and stays there!!!
-// there, it is known as max_dbsize, and governs db.inc.php. This needs to be changed to use the permission sysrtem instead.
+// there, it is known as max_dbsize, and governs db.inc.php. This needs to be changed to use the permission system instead.
 // see note above regarding "db_cache_size_limit"
+
+
+
 
 
 
@@ -391,6 +413,8 @@ $mysql_process_limit = array(
 	'dist' => (20 * $mysql_big_process_limit), /* Note: dist-db is lightweight, therefore there is a multiplier here. */ 
 	'catquery' => $mysql_big_process_limit
 	);
+	//TODO use integer constants instead olf strings.
+
 /* plus names for if they need to be printed */
 $mysql_process_name = array(
 	'freqtable' => 'frequency table',
@@ -399,4 +423,5 @@ $mysql_process_name = array(
 	'dist' => 'distribution',
 	'catquery' => 'categorised query'
 	);
+	//TODO use integer constants instead olf strings.
 

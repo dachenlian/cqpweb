@@ -49,7 +49,7 @@ class CQP
 	/* error handling */
 	private $error_handler;	/* set to name of user-defined error handler
 							   or to false if there isn't one */
-	private $status;	 	/* status of last executed command ('ok' or 'error') */
+	private $status;	 	/* status of last executed command ('ok' or 'error') */ // TODO use class constants instead for this.
 	public $error_message;	/* array containing string(s) produced by last error */
 
 	/* progress bar handling:
@@ -239,7 +239,7 @@ class CQP
 
 
 		if (preg_match($version_pattern, $version_string, $matches) == 0)
-			exit("ERROR: CQP backend startup failed");
+			exit("ERROR: CQP backend startup failed; the reported CQP version [$version_string] could not be parsed.");
 		else
 		{
 			$this->major_version = (int)$matches[1];
@@ -386,8 +386,9 @@ class CQP
 	 * It is recommended to always use this function and never to set 
 	 * the corpus directly via execute().
 	 * 
-	 * If the corpus "name" passed is empty (whitespace, zero-length,. NULL)
-	 * then this function does nothing.
+	 * If the corpus "name" passed is empty (whitespace, zero-length, NULL)
+	 * then this function does nothing. The parameter must be CAPITALS
+	 * version of the corpus handle (e.g. "BROWN" not "brown".
 	 */
 	public function set_corpus($corpus_id)
 	{
@@ -427,6 +428,12 @@ class CQP
 	/** 
 	 * Executes a CQP command & returns an array of results (output lines from CQP),
 	 * or false if an error is detected.
+	 * 
+	 * This function should only be used for known-safe input; 
+	 * command strings from a potentially-unsafe or potentially-malevolent 
+	 * source (e.g. naive user or network source) should instead be
+	 * passed through query(), q.v., which uses a Query Lock
+	 * to prevent execution of anything *other* than a CQP query. 
 	 */
 	public function execute($command, $my_line_handler = false)
 	{
@@ -491,7 +498,7 @@ class CQP
 		/* check for error messages */
 		if ($this->checkerr())
 			return false;
-		
+
 		/* return the array of results */
 		return $this->filter_output($result);
 	}
@@ -559,7 +566,7 @@ class CQP
 	 * A wrapper for ->execute that gets the size of the named query.
 	 * method has no error coding - relies on the normal ->execute error checking.
 	 * 
-	 * @return int  The number of hits in the query. 
+	 * @return int  The number of hits in the query. 0 if there was an error.
 	 */
 	public function querysize($name)
 	{
@@ -1198,6 +1205,16 @@ class CQP
 			return NULL;
 	}
 	
+	/**
+	 * Gets the size of the currently loaded corpus (in tokens).
+	 */
+	public function get_corpus_tokens()
+	{
+		$infoblock = implode("\n", $this->execute("info"));
+		preg_match('/Size:\s+(\d+)\s/', $infoblock, $m);
+		return (int) $m[1];
+	}
+	
 	
 	
 	/* -------------- *
@@ -1219,23 +1236,39 @@ class CQP
 			return NULL;
 	}
 	
-	/** Backslash-escapes any CQP-syntax metacharacters in the argument string. */
-	public static function escape_metacharacters($s)
+	/*  */
+	/**
+	 * Backslash-escapes any regular expression metacharacters in the argument string,
+	 * to create strings that can be sdafely embedded within the quote-marks-delimited parts
+	 * of a CQP query.
+	 * 
+	 * Since CQP now uses PCRE, this is now a wrapper around the PHP function preg_quote; the wrapper supplies 
+	 * the most common delimiter argument automatically (in the docs, all examples of CQP syntax use
+	 * double quotes, though single quotes are certainly possible!)
+	 * 
+	 * @param  string $s          The string to escape.
+	 * @param  string $delimiter  Optionally specify a delimiter character, which will also be escaped;
+	 *                            default delimiter is double-quote, but single-quote can also be used.
+	 * @return string             Modified string. 
+	 */
+	public static function escape_metacharacters($s, $delimiter = '"')
 	{
-		$replacements = array(
-			'"' => '\"',
-			'(' => '\(',
-			')' => '\)',
-			'|' => '\|',
-			'[' => '\[',
-			']' => '\]',
-			'.' => '\.',
-			'?' => '\?',
-			'+' => '\+',
-			'*' => '\*'		
-			);
-		/* do the replacement on backslash to make sure this happens first */
-		return strtr(str_replace('\\', '\\\\', $s), $replacements);
+//		old way of doing it.
+// 		$replacements = array(
+// 			'"' => '\"',
+// 			'(' => '\(',
+// 			')' => '\)',
+// 			'|' => '\|',
+// 			'[' => '\[',
+// 			']' => '\]',
+// 			'.' => '\.',
+// 			'?' => '\?',
+// 			'+' => '\+',
+// 			'*' => '\*'		
+// 			);
+// 		/* do the replacement on backslash to make sure this happens first */
+// 		return strtr(str_replace('\\', '\\\\', $s), $replacements);
+		return preg_quote($s, $delimiter);
 	}
 	
 	/** Gets a string containing the class's default required version of CWB. */ 

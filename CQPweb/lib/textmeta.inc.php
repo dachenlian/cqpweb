@@ -24,6 +24,10 @@
 
 
 
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
+
 
 
 /* initialise variables from settings files  */
@@ -46,17 +50,19 @@ cqpweb_startup_environment(CQPWEB_STARTUP_DONT_CONNECT_CQP);
 /* initialise variables from $_GET */
 
 if (empty($_GET["text"]) )
-	exiterror_general("No text was specified for metadata-view! Please reload CQPweb.");
+	exiterror("No text was specified for metadata-view! Please reload CQPweb.");
 else 
 	$text_id = cqpweb_handle_enforce($_GET["text"]);
-	
+
+
+$field_info = metadata_get_array_of_metadata($Corpus->name);
 
 $result = do_mysql_query("SELECT * from text_metadata_for_{$Corpus->name} where text_id = '$text_id'");
 
-if (mysql_num_rows($result) < 1)
-	exiterror_general("The database doesn't appear to contain any metadata for text $text_id.");
+if (1 > mysql_num_rows($result))
+	exiterror("The database doesn't appear to contain any metadata for text $text_id.");
 
-$metadata = mysql_fetch_row($result);
+$metadata = mysql_fetch_assoc($result);
 
 
 /*
@@ -71,97 +77,55 @@ echo print_html_header($Corpus->title . ': viewing text metadata -- CQPweb', $Co
 	<tr>
 		<th colspan="2" class="concordtable">Metadata for text <em><?php echo $text_id; ?></em></th>
 	</tr>
+	<tr>
+		<th width="40%"></th>
+		<th></th>
+	</tr>
 
 <?php
 
-$n = count($metadata);
+$n_words = count($metadata);
 
-for ( $i = 0 ; $i < $n ; $i++ )
+foreach ($metadata as $field => $value)
 {
-	$att = metadata_expand_attribute(mysql_field_name($result, $i), $metadata[$i]);
-	
-	/* this expansion is hardwired */
-	if ($att['field'] == 'text_id')
-		$att['field'] =  'Text identification code';
-	/* this expansion is hardwired */
-	if ($att['field'] == 'words')
-		$att['field'] =  'No. words in text';
-	/* don't show the CQP delimiters for the file */
-	if ($att['field'] == 'cqp_begin' || $att['field'] == 'cqp_end')
-		continue;
-
-	/* don't allow empty cells */
-	if (empty($att['value']))
-		$show = '&nbsp;';
-	else
-		$show = $att['value'];
-		
-	
-	
-	/* if the value is a URL, convert it to a link;
-	 * also allow audio, image, video, YouTube embeds */
-	if (false !== strpos($show, ':') )
+	if (isset($field_info[$field]))
 	{
-		list($prefix, $url) = explode(':', $show, 2);
-		
-		switch($prefix)
+		/* standard field */
+		$desc = escape_html($field_info[$field]->description);
+
+		/* don't allow empty cells */
+		if (empty($value))
+			$show = '&nbsp;';		
+		else if (METADATA_TYPE_FREETEXT == $field_info[$field]->datatype)
+			$show = render_metadata_freetext_value($value);
+		else if (METADATA_TYPE_CLASSIFICATION == $field_info[$field]->datatype)
 		{
-		case 'http':
-		case 'https':
-		case 'ftp':
-			/* pipe is used as a delimiter between URL and linktext to show. */
-			if (false !== strpos($show, '|'))
-			{
-				list($url, $linktext) = explode('|', $show);
-				$show = '<a target="_blank" href="'.$url.'">'.$linktext.'</a>';
-			}
-			else
-				$show = '<a target="_blank" href="'.$show.'">'.$show.'</a>';
-			break;
-			
-		case 'youtube':
-			/* if it's a YouTube URL of one of two kinds, extract the ID; otherwise, it should be a code already */
-			if (false !== strpos($url, 'youtube.com'))
-			{
-				/* accept EITHER a standard yt URL, OR a yt embed URL. */
-				if (preg_match('|(?:https?://)(?:www\.)youtube\.com/watch\?.*?v=(.*)[\?&/]?|i', $url, $m))
-					$ytid = $m[1]; 
-				else if (preg_match('|(?:https?://)(?:www\.)youtube\.com/embed/(.*)[\?/]?|i', $url, $m))
-					$ytid = $m[1];
-				else
-					/* should never be reached unless bad URL used */
-					$ytid = $url;
-			}
-			else
-				$ytid = $url;
-			$show = '<iframe width="640" height="480" src="http://www.youtube.com/embed/' . $ytid . '" frameborder="0" allowfullscreen></iframe>';
-			break;
-			
-		case 'video':
-			/* we do not specify height and width: we let the video itself determine that. */
-			$show = '<video src="' . $url . '" controls preload="metadata"><a target="_blank" href="' . $url . '">[Click here for videofile]</a></video>';
-			break;
-			
-		case 'audio':
-			$show = '<audio src="' . $url . '" controls><a target="_blank" href="' . $url . '">[Click here for audiofile]</a></audio>';
-			break;
-		
-		case 'image':
-			/* Dynamic popup layer: see textmeta.js */
-			$show = '<a class="menuItem" href="" onClick="textmeta_add_iframe(&quot;' . $url . '&quot;); return false;">[Click here to display]</a>';
-			break;
-					
-		default;
-			/* unrecognised prefix: treat as just normal value-content */
-			break;
+			$pair = metadata_expand_attribute($field, $value, $Corpus->name);
+			$show = $pair['value'];
 		}
+		else
+			$show = $value;
+	}
+	else
+	{
+		/* non standard, hardwired fields */
+		if ($field == 'text_id')
+		{
+			$desc = 'Text identification code';
+			$show = $value;
+		}
+		/* this expansion is hardwired */
+		else if ($field == 'words')
+		{
+			$desc = 'No. words in text';
+			$show = number_format($value, 0);
+		}
+		/* don't show the CQP delimiters for the file */
+		else if ($field == 'cqp_begin' || $field == 'cqp_end')
+			continue;
 	}
 	
-	echo '<tr><td class="concordgrey">' , $att['field']
-		, '</td><td class="concordgeneral">' , $show
-		, (isset($js) ? $js : '')
-		, "</td></tr>\n"
-		;
+	echo '<tr><td class="concordgrey">' , $desc, '</td><td class="concordgeneral">' , $show, "</td></tr>\n";
 }
 
 
@@ -172,20 +136,4 @@ echo print_html_footer('textmeta');
 
 cqpweb_shutdown_environment();
 
-
-/* 
- * one support function for the above
- */
-
-function get_js_for_embedded_image($url)
-{
-	$js = <<<END_OF_JS
-
-
-
-
-END_OF_JS;
-	
-	return  $js;
-}
 

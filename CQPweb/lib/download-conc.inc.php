@@ -22,8 +22,10 @@
  */
 
 
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
 
-/* initialise variables from settings files  */
 require('../lib/environment.inc.php');
 
 /* include function library files */
@@ -35,8 +37,8 @@ require('../lib/cache.inc.php');
 require('../lib/subcorpus.inc.php');
 require('../lib/exiterror.inc.php');
 require('../lib/metadata.inc.php');
+require('../lib/xml.inc.php');
 require('../lib/user-lib.inc.php');
-require('../lib/cwb.inc.php');
 require('../lib/cqp.inc.php');
 
 
@@ -48,8 +50,13 @@ cqpweb_startup_environment();
 
 /* variables from GET needed by both versions of this script */
 
-
 $qname = safe_qname_from_get();
+
+
+/* similarly, we'll always need this.... */
+
+$align_info = check_alignment_permissions(list_corpus_alignments($Corpus->name));
+
 
 
 
@@ -73,7 +80,7 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 		$eol = get_user_linefeed($User->username);
 	
 
-	/* the folllowing switch deals wth the ones that have "typical settings" */
+	/* the following switch deals wth the ones that have "typical settings" */
 	switch ($_GET['downloadTypical'])
 	{
 	case 'threeline':
@@ -90,7 +97,7 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 		$hit_delimiter_after  = '';
 		
 		/* context size */
-		$words_in_context = $default_words_in_download_context;
+		$words_in_context = $Config->default_words_in_download_context;
 		
 		/* tagged and untagged? */
 		$tagged_as_well = false;
@@ -101,6 +108,10 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 		/* kwic or line? */
 		$download_view_mode = 'kwic';
 		
+		
+		/* NO visualisable XML */
+		$include_visualisable_xml = false;
+
 		/* include corpus positions? */
 		$include_positions = false;
 		
@@ -112,6 +123,9 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 		
 		/* NO metadata */
 		$fields_to_include = array();
+		
+		/* NO parallel data */
+		$alx_to_include = array();
 		
 		break;
 		
@@ -126,10 +140,10 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 		$hit_delimiter_after  = ' >>>';
 		
 		/* context size */
-		$words_in_context = $default_words_in_download_context;
+		$words_in_context = $Config->default_words_in_download_context;
 		
 		/* tagged and untagged? */
-		$tagged_as_well = true;
+		$tagged_as_well = !empty($Corpus->primary_annotation);
 		
 		/* file-start info format */
 		$header_format = NULL;
@@ -137,6 +151,9 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 		/* kwic or line? */
 		$download_view_mode = 'line';
 		
+		/* NO visualisable XML */
+		$include_visualisable_xml = false;
+
 		/* include corpus positions? */
 		$include_positions = true;
 		
@@ -148,7 +165,10 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 		
 		/* in this case, ALL categories are downloaded */
 		$fields_to_include = metadata_list_fields();
-
+		
+		/* NO parallel data */
+		$alx_to_include = array();
+		
 		break;
 	
 	default:
@@ -176,14 +196,14 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 		if (isset($_GET['downloadContext']))
 			$words_in_context = (int) $_GET['downloadContext'];
 		else
-			$words_in_context = $default_words_in_download_context;
+			$words_in_context = $Config->default_words_in_download_context;
 		if ($words_in_context > $Corpus->max_extended_context)
 			$words_in_context = $Corpus->max_extended_context;
 	
 		/* tagged and untagged? */
 
 		if (isset($_GET['downloadTaggedAndUntagged']) && $_GET['downloadTaggedAndUntagged'] == 1)
-			$tagged_as_well = true;
+			$tagged_as_well = !empty($Corpus->primary_annotation);
 		else
 			$tagged_as_well = false;
 		
@@ -211,6 +231,10 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 		else
 			$download_view_mode = 'kwic';
 					
+		/* Include visualisable XML? If true, XML will be shown in raw CQP format (currently) */
+		
+		$include_visualisable_xml = (isset($_GET['downloadVizXml']) ? (bool) $_GET['downloadVizXml'] : false );
+		
 		/* include corpus positions? */
 		
 		if (isset($_GET['downloadPositions']) && $_GET['downloadPositions'] == 1)
@@ -232,10 +256,8 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 			$filename = 'concordance-download';
 		$filename .= '.txt';
 
+
 		/* the categories to include */
-/* Nonurgent-TODO...................
-      Possibility of downloading XML features in the conc download?
-*/
 		
 		$field_full_list = metadata_list_fields();
 		$fields_to_include = array();
@@ -269,7 +291,20 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 			break;
 		}
 		
+		/* parallel regions to include */
+		$alx_to_include = array();
+		foreach($_GET as $key => &$val)
+		{
+			if (substr($key, 0, 14) != 'downloadAlign_')
+				continue;
+			$c = substr($key, 14);
+			if ($val && in_array($c, $align_info))
+				$alx_to_include[] = $c;
+		}
+		
+		/* and that is the end of setup when using non-preset download settings. */ 
 		break;
+		
 	} /* end of switch */
 	
 	/* end of variable setup */
@@ -321,22 +356,20 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 			}
 		}
 		foreach($fields_to_include as $c)
-		{
-			echo $j, '. ' , metadata_expand_field($c) , $eol;
-			$j++;
-		}
+			echo $j++ , '. ' , metadata_expand_field($c) , $eol;
+		
+		foreach($alx_to_include as $a)
+			echo $j++ , '. Parallel region from "', $align_info[$a], '"', $eol;
+		
 		if ($context_url)
-		{
-			echo $j, ". URL", $eol;
-			$j++;
-		}
+			echo $j++, ". URL", $eol;
+
 		if ($include_positions)
 		{
-			echo $j, ". Matchbegin corpus position", $eol;
-			$j++;
-			echo $j, ". Matchend corpus position", $eol;
-			$j++;
+			echo $j++, ". Matchbegin corpus position", $eol;
+			echo $j++, ". Matchend corpus position",   $eol;
 		}
+		
 		echo $eol;
 	}
 	else if ($header_format == 'tabs')
@@ -355,7 +388,9 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 				echo "\tTagged concordance line";
 		}
 		foreach($fields_to_include as $f)
-			echo "\t" . metadata_expand_field($f);
+			echo "\t" , metadata_expand_field($f);
+		foreach($alx_to_include as $a)
+			echo "\t" , 'Parallel: ', $align_info[$a];
 		if ($context_url)
 			echo "\tURL";
 		if ($include_positions)
@@ -374,9 +409,17 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 	$cqp->execute("set LD '--<<>>--'");
 	$cqp->execute("set RD '--<<>>--'");
 	$cqp->execute("set Context $words_in_context words");
-// 	$primary_tag_handle = get_corpus_metadata('primary_annotation');
-	$primary_tag_handle = $Corpus->primary_annotation;
-	$cqp->execute('show +word' . (empty($primary_tag_handle) ? '' : "+$primary_tag_handle "));
+	$cqp->execute('show +word ' . ( (!$tagged_as_well) ? '' : "+{$Corpus->primary_annotation} "));
+	/* NB: $tagged_as well is only ever true if a primary annotation exists: see places at top of file where
+	 * it is initialised.... it can be set to false, but true always depends on "!empty(primary_annotation)" */
+	if ($include_visualisable_xml)
+	{
+		$xml_tags_to_show = xml_visualisation_s_atts_to_show('download');
+		if ( ! empty($xml_tags_to_show) )
+			$cqp->execute('show +' . implode(' +', $xml_tags_to_show));
+	}
+	if (!empty($alx_to_include))
+		$cqp->execute("show +" . implode(' +', $alx_to_include));
 	$cqp->execute("set PrintStructures \"text_id\""); 
 
 	list($num_of_solutions) = $cqp->execute("size $qname");
@@ -393,6 +436,15 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 					$v = $k;
 		}
 	}
+	
+	
+	/* Get the index of visualisations. */
+	$xml_viz_index = index_xml_visualisation_list(get_all_xml_visualisations($Corpus->name, false, false, true));
+	
+	/* Get a table of which aligned corpora have our corpus's primary annotation */
+	$alx_has_annotation = array();
+	foreach ($align_info as $a=>$desc)
+		$alx_has_annotation[$a] = array_key_exists($Corpus->primary_annotation, get_corpus_annotations($a));
 
 
 
@@ -407,38 +459,102 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 		$batch_end = $batch_start + 99;
 		if ($batch_end >= $num_of_solutions)
 			$batch_end = $num_of_solutions - 1; 
-			
+		
 		$kwic = $cqp->execute("cat $qname $batch_start $batch_end");
 		$table = $cqp->dump($qname, $batch_start, $batch_end); 
-		$n = count($kwic);
+		$n_words = count($kwic);
 
-		/* loop for each line */
-		for ($i = 0 ; $i < $n ; $i++)
+		/* loop for each line. $i = index into $kwic (may include parallel lines)
+		 * $t_i = index into table (no extras for parallel lines, so equal to the line number */
+		for ($i = 0, $t_i = 0 ; $i < $n_words ; $i++, $t_i++)
 		{
-			$line_indicator = $batch_start + $i + 1;
-
+			$line_indicator = $batch_start + $t_i + 1;
 			preg_match("/\A\s*\d+: <text_id (\w+)>:/", $kwic[$i], $m);
 			$text_id = $m[1];
 			$kwic[$i] = preg_replace("/\A\s*\d+: <text_id \w+>:\s+/", '', $kwic[$i]);
 
-			list($kwic_lc, $kwic_match, $kwic_rc) = explode('--<<>>--', $kwic[$i]);
-			list($match, $matchend, $target, $keyword) = $table[$i];
+// 			list($kwic_lc, $kwic_match, $kwic_rc) = explode('--<<>>--', $kwic[$i]);
+			$kwic_chunks = explode('--<<>>--', $kwic[$i]);
+			list($match, $matchend, $target, $keyword) = $table[$t_i];
 
 			/* get tagged and untagged lines for print */
 			
-			$untagged = $kwic_lc . ' ~~~***###' 
-				. $hit_delimiter_before . $kwic_match . $hit_delimiter_after 
-				. ' ~~~***###' . $kwic_rc;
-			if ($tagged_as_well) 
-				$tagged = "\t" . preg_replace('/(\S+)\/([^\s\/]+)/', '$1_$2', $untagged);
+// 			$untagged = $kwic_lc . ' ~~~***###' 
+// 				. $hit_delimiter_before . $kwic_match . $hit_delimiter_after 
+// 				. ' ~~~***###' . $kwic_rc;
+// 			if ($tagged_as_well) 
+// 				$tagged = "\t" . preg_replace('/(\S+)\/([^\s\/]+)/', '$1_$2', $untagged);
+// 			else
+// 				$tagged = '';
+// 			/* now, we can erase the tags from the "untagged" line. */
+// 			$untagged = preg_replace('/(\S+)\/([^\s\/]+)/', '$1', $untagged);
+			
+// 			$kwiclimiter = ($download_view_mode == 'kwic' ? "\t" : ' ');
+// 			$tagged   = preg_replace('/\s*~~~\*\*\*###\s*/', $kwiclimiter, $tagged);
+// 			$untagged = preg_replace('/\s*~~~\*\*\*###\s*/', $kwiclimiter, $untagged);
+
+			$untagged_bits = array();
+			$tagged_bits   = array();
+			$xml_before_string = $xml_after_string = '';
+			
+			foreach ($kwic_chunks as $ix=>$chunk)
+			{
+				/* process the chunk word by word, including XML viz if necessary */
+				preg_match_all(CQP_INTERFACE_WORD_REGEX, trim($chunk), $m, PREG_PATTERN_ORDER);
+				$words = $m[4];
+				$xml_before_array = $m[1];
+				$xml_after_array  = $m[5];
+				$ntok = count($words);
+				$untagged_bits[$ix] = $tagged_bits[$ix] = array();
+				
+				for ($j = 0; $j < $ntok; $j++)
+				{
+					/* apply XML visualisations */
+					if ($include_visualisable_xml)
+					{
+						$xml_before_string = apply_xml_visualisations($xml_before_array[$j], $xml_viz_index);
+						if (!empty($xml_before_string))
+							$xml_before_string .= ' ';
+						$xml_after_string  = apply_xml_visualisations($xml_after_array[$j], $xml_viz_index);
+						if (!empty($xml_after_string))
+							$xml_after_string = ' ' . $xml_after_string;
+					}
+
+					if ($tagged_as_well)
+					{
+						preg_match(CQP_INTERFACE_EXTRACT_TAG_REGEX, $words[$j], $m);
+						$word = $m[1];
+						$tag  = $m[2];
+					}
+					else
+						$word = $words[$j];
+// 					list($word, $tag) = extract_cqp_word_and_tag($words[$j], false, false);
+					
+					$untagged_bits[$ix][] .= $xml_before_string . $word . $xml_after_string;
+					if ($tagged_as_well)
+						$tagged_bits[$ix][] .= $xml_before_string . $word . '_' . $tag . $xml_after_string;
+				}
+				/* arrays to strings now we have it all */
+				$untagged_bits[$ix] = trim(implode(' ', $untagged_bits[$ix]));
+				$tagged_bits[$ix]   = trim(implode(' ', $tagged_bits[$ix]));
+				
+				/* if this chunk is the node, wrap in the deliminter. */
+				if ($ix == 1)
+				{
+					$untagged_bits[$ix] = $hit_delimiter_before . $untagged_bits[$ix] . $hit_delimiter_after;
+					if ($tagged_as_well)
+						$tagged_bits[$ix] = $hit_delimiter_before . $tagged_bits[$ix] . $hit_delimiter_after;
+				}
+			}
+
+			$kwiclimiter = ($download_view_mode == 'kwic' ? "\t" : ' ');
+			$untagged = implode($kwiclimiter, $untagged_bits);
+			if ($tagged_as_well)
+				$tagged = "\t" . implode($kwiclimiter, $tagged_bits);
 			else
 				$tagged = '';
-			/* now, we can erase the tags from the "untagged" line. */
-			$untagged = preg_replace('/(\S+)\/([^\s\/]+)/', '$1', $untagged);
+			/* and the actual concordance field(s) is/are complete. */
 			
-			$kwiclimiter = ($download_view_mode == 'kwic' ? "\t" : ' ');
-			$tagged   = preg_replace('/\s*~~~\*\*\*###\s*/', $kwiclimiter, $tagged);
-			$untagged = preg_replace('/\s*~~~\*\*\*###\s*/', $kwiclimiter, $untagged);
 
 
 			if (!empty($fields_to_include)) 
@@ -458,17 +574,81 @@ if ( isset($_GET['downloadGo']) && $_GET['downloadGo'] === 'yes')
 			else
 				$categorisation_string = '';
 			
-
-			$link = ($context_url ? "\t". url_absolutify("context.php?qname=$qname&batch=" . ($batch_start + $i) . "&uT=y") : '');
 			
-			echo $line_indicator, "\t", $text_id, "\t", $untagged, $tagged, $categorisation_string, $link;
+			if (!empty($alx_to_include))
+			{
+// TODO there is an assumption here that needs testing:
+// TODO ... that the aligned regions *appear* in the same order as we requested them in the "show" command above.
+// TODO That may not be the case. If not, then the headings will be wrong, and the key into $alx_has_annotation will be wrong.
+
+				$alx_lines = array(); 
+
+				foreach($alx_to_include as $a)
+				{
+					/* first, work out if this data has tags showing in it. If tagged data as well was downloaded, we download tags.
+					 * NB. to save space, unlike the main-language column, we DON'T download 2 different columsn for parallel regions.  */
+					$this_alx_tagged_as_well = ( $tagged_as_well && $alx_has_annotation[$a] );
+// show_var($this_alx_tagged_as_well);
+// show_var($tagged_as_well);
+// show_var($alx_has_annotation);
+
+					$alx_input = trim(preg_replace("/-->$a:\s/", '', $kwic[++$i]));
+					
+					if ($alx_input == '(no alignment found)')
+						$alx_lines[] = '(no alignment found)';
+					else
+					{
+						preg_match_all(CQP_INTERFACE_WORD_REGEX, $alx_input, $m, PREG_PATTERN_ORDER);
+						$words = $m[4];
+						$xml_before_array = $m[1];
+						$xml_after_array  = $m[5];
+						$ntok = count($words);
+						
+						/* process the chunk word by word, including XML viz if necessary */
+						$alx_word_bits = array();
+						for ($j = 0; $j < $ntok; $j++)
+						{
+							/* apply XML visualisations */
+							if ($include_visualisable_xml)
+							{
+								$xml_before_string = apply_xml_visualisations($xml_before_array[$j], $xml_viz_index);
+								if (!empty($xml_before_string))
+									$xml_before_string .= ' ';
+								$xml_after_string  = apply_xml_visualisations($xml_after_array[$j], $xml_viz_index);
+								if (!empty($xml_after_string))
+									$xml_after_string = ' ' . $xml_after_string;
+							}
+		
+							if($this_alx_tagged_as_well)
+							{
+								/* nb,  this is the regex from "extract_cqp_word_and_tag" */
+								preg_match(CQP_INTERFACE_EXTRACT_TAG_REGEX, $words[$j], $m);
+								$word = $m[1];
+								$tag  = $m[2];
+							}
+							else
+								$word = $words[$j];
+							$alx_word_bits[] = $xml_before_string . $word . ($this_alx_tagged_as_well ? '_' . $tag :''). $xml_after_string;
+						}
+						$alx_lines[] = trim(implode(' ', $alx_word_bits));
+					}
+				}
+				$alx_string = "\t" . implode("\t", $alx_lines);
+			}
+			else
+				$alx_string = '';
+			
+
+			$link = ($context_url ? "\t". url_absolutify("context.php?qname=$qname&batch=" . ($batch_start + $t_i) . "&uT=y") : '');
+			
+			
+			echo $line_indicator, "\t", $text_id, "\t", $untagged, $tagged, $categorisation_string, $alx_string, $link;
 
 			if ($include_positions)
 				echo "\t", $match, "\t", $matchend;
 			
 			echo $eol;
 
-			
 		} /* end loop for each line */
 
 	} /* end loop for concordance line batch download */
@@ -496,10 +676,10 @@ else
 	?>
 	<table class="concordtable" width="100%">
 		<tr>
-			<th class="concordtable" colspan="2">Download concordance</th>
+			<th class="concordtable">Download concordance</th>
 		</tr>
 		<tr>
-			<td class="concordgeneral" colspan="2" align="center">
+			<td class="concordgeneral" align="center">
 				&nbsp;<br/>
 				<form action="redirect.php" method="get">
 					<input type="submit" 
@@ -524,7 +704,9 @@ else
 				</form>
 			</td>
 		</tr>
-		<form action="redirect.php" method="get">
+	</table>
+	<form action="redirect.php" method="get">
+		<table class="concordtable" width="100%">
 			<tr>
 				<th class="concordtable" colspan="2">Detailed output options</th>
 			</tr>
@@ -578,11 +760,18 @@ else
 						<option value="3">3 words each way</option>
 						<option value="4">4 words each way</option>
 						<option value="5">5 words each way</option>
+						<!--
+						nb -- commented out to make room for higher numbers.
 						<option value="6">6 words each way</option>
 						<option value="7">7 words each way</option>
 						<option value="8">8 words each way</option>
 						<option value="9">9 words each way</option>
+						-->
 						<option value="10" selected="selected">10 words each way</option>
+						<option value="20">20 words each way</option>
+						<option value="50">50 words each way</option>
+						<option value="100">100 words each way</option>
+						<option value="200">200 words each way</option>
 						<?php
 						if ($Corpus->max_extended_context >= 50) 
 							echo '<option value="50">50 words each way</option>';
@@ -622,6 +811,15 @@ else
 				</td>
 			</tr>
 			
+			<tr>
+				<td class="concordgeneral">Include sub-text region boundary markers:</td>
+				<td class="concordgeneral">
+					<select name="downloadVizXml">
+						<option value="1">Yes</option>
+						<option value="0" selected="selected">No</option>
+					</select>
+				</td>
+			</tr>
 			<tr>
 				<td class="concordgeneral">Include corpus positions (required for re-import)</td>
 				<td class="concordgeneral">
@@ -670,17 +868,64 @@ else
 				<td class="concordgeneral">Select from available text metadata:
 				<td class="concordgeneral">
 					<?php	
-					foreach ( metadata_list_fields() as $field )
+					$meta_fields = metadata_list_fields();
+					if (empty($meta_fields))
+						echo "There is no text metadata available in this corpus.";
+					foreach ( $meta_fields as $field )
 						echo "\n\t\t\t\t<input type=\"checkbox\" name=\"downloadMeta_"
 							, $field
-							, '" value="1" />'
+							, '" id="downloadMeta_'
+							, $field
+							, '" value="1" /> <label for="downloadMeta_'
+							, $field
+							, '">'
 							, escape_html(metadata_expand_field($field))
-							, "<br/>"
+							, "</label><br/>"
  							;
 					?>
 					
 				</td>
 			</tr>
+			
+			<?php 
+			
+			if (!empty($align_info))
+			{				
+				?>
+
+				<tr>
+					<td class="concordgrey" colspan="2" align="center">
+						&nbsp;<br/>
+						You can include columns in your download that contain
+						the query hit's aligned region from one or more parallel corpora:
+						<br/>&nbsp;
+					</td>
+				</tr>
+				<tr>
+					<td class="concordgeneral">Select from available parallel corpora:
+					<td class="concordgeneral">
+						<?php 
+						foreach ( $align_info as $alx => $desc )
+							echo "\n\t\t\t\t<input type=\"checkbox\" name=\"downloadAlign_"
+								, $alx
+								, '" id="downloadAlign_'
+								, $alx
+								, '" value="1" /> <label for="downloadAlign_'
+								, $alx
+								, '">'
+								, escape_html($desc)
+								, "</label><br/>\n"
+	 							;
+						?>						
+					</td>
+				</tr>
+				
+				<?php 
+			}
+			
+			?>
+			
+			
 			<tr>
 				<td class="concordgeneral" colspan="2" align="center">
 					&nbsp;<br/>
@@ -693,19 +938,21 @@ else
 			<input type="hidden" name="downloadGo" value="yes" />
 			<input type="hidden" name="downloadTypical" value="NULL" />
 			<input type="hidden" name="uT" value="y" />
-		</form>
+		</table>
+	</form>
+
+	<?php
 	
-		<?php
+	/* only display the button if the user is allowed to use it. */
+	if (PRIVILEGE_TYPE_CORPUS_RESTRICTED < $Corpus->access_level)
+	{
+		?>
 		
-		/* only display the button if the user is allowed to use it. */
-		if (PRIVILEGE_TYPE_CORPUS_RESTRICTED < $Corpus->access_level)
-		{
-			?>
-			
-			<tr>
-				<th class="concordtable" colspan="2">Switch download type</th>
-			</tr>
-			<form action="redirect.php" method="get">
+		<form action="redirect.php" method="get">
+			<table class="concordtable" width="100%">
+				<tr>
+					<th class="concordtable" colspan="2">Switch download type</th>
+				</tr>
 				<tr>
 					<td class="concordgeneral" colspan="2" align="center">
 						&nbsp;<br/>
@@ -716,14 +963,11 @@ else
 				<input type="hidden" name="redirect" value="download-tab" />
 				<input type="hidden" name="qname" value="<?php echo $qname; ?>" />
 				<input type="hidden" name="uT" value="y" />
-			</form>
-			
-			<?php
-		}
-		?>
-
-	</table>
-	<?php
+			</table>
+		</form>
+		
+		<?php
+	}
 	
 	echo print_html_footer('downloadconc');
 

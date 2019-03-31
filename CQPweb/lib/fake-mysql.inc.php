@@ -84,6 +84,10 @@ function mysql_close($link_identifier = NULL)
 	if (!mysql_fake_force_link_set($link_identifier))
 		return false;
 
+	/* if mysqli_connect returned non-object, don't attempt to close it. */
+	if (is_bool($link_identifier))
+		return false;
+	
 	return mysqli_close($link_identifier);	
 }
 
@@ -180,6 +184,20 @@ function mysql_query($query, $link_identifier = NULL)
 
 
 /**
+ * Fake MySQL query function, with UNBUFFERED MODE, using MySQLi.
+ */
+function mysql_unbuffered_query($query, $link_identifier = NULL)
+{
+	if (!mysql_fake_force_link_set($link_identifier))
+		return false;
+		
+	return mysqli_query($link_identifier, $query, MYSQLI_USE_RESULT);
+}
+
+
+
+
+/**
  * Fake MySQL count-affected-rows function using MySQLi.
  */
 function mysql_affected_rows($link_identifier = NULL)
@@ -229,7 +247,7 @@ function mysql_fake_force_link_set(&$link_identifier)
 		return false;
 	}
 	else 
-		return true;	
+		return true;
 }
 
 
@@ -319,7 +337,7 @@ function mysql_num_fields($result)
 	if ($ret === NULL)
 		return false;
 	else
-		return $ret;	
+		return $ret;
 }
 
 
@@ -330,10 +348,10 @@ function mysql_num_fields($result)
 function mysql_field_name($result, $field_offset)
 {
 	$info = mysqli_fetch_field_direct($result, $field_offset);
-	if (isset( $info['name'] ))
-		return $info['name'];
+	if (false !== $info)
+		return $info->name;
 	else
-		return false;	
+		return false;
 }
 
 /**
@@ -345,5 +363,16 @@ function mysql_data_seek($result, $row_number)
 }
 
 
+/**
+ * Fake MySQL-result free-resultset-memory function.
+ * 
+ * (Needed for unbuffered results, must be called before the server can be used again;
+ * can optionally be used with buffered results but usually doesn't need to be.)
+ */
+function mysql_free_result($result)
+{
+	mysqli_free_result($result);
+	return true;
+}
 
-//TODO test this module
+

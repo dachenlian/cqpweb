@@ -25,18 +25,13 @@
 
 /**
  * @file
+ * 
  * This file contains a subset of functions used in the admin interface: those concerned with Cache Control of one kind or another.
  */
 
 
 
 
-// TO DO This function still detexts subcorpus files as "could be deleted files" -- needs to change, need separate func for stray subcorpus files. */  
-//TODO
-//TODO
-/**
- * 
- */
 function printquery_querycachecontrol()
 {
 	global $Config;
@@ -93,7 +88,7 @@ function printquery_querycachecontrol()
 				Maximum cache size (set in the configuration file)
 			</td>
 			<td class="concordgeneral">
-				<?php echo number_format(((float)$Config->cache_size_limit)/1024.0), " KB\n"; ?>
+				<?php echo number_format(((float)$Config->query_cache_size_limit)/1024.0), " KB\n"; ?>
 			</td>
 		</tr>
 		<tr>
@@ -103,13 +98,36 @@ function printquery_querycachecontrol()
 			<td class="concordgeneral">
 				<?php
 				
-				list($size_in_bytes) = mysql_fetch_row(do_mysql_query("select sum(file_size) from saved_queries"));
+				list($size_in_bytes) 
+					= mysql_fetch_row(do_mysql_query("select sum(file_size) from saved_queries"));
 				if (empty($size_in_bytes))
 					$size_in_bytes = 0;
 				echo number_format(((float)$size_in_bytes) / 1024.0, 0)
 					, " KB<br/>("
-					, number_format( ( ((float)$size_in_bytes) / ((float)$Config->cache_size_limit) ) * 100.0, 0)
+					, number_format( ( ((float)$size_in_bytes) / ((float)$Config->query_cache_size_limit) ) * 100.0, 0)
 					, "% of maximum)\n"
+					;
+				 
+				?>
+			</td>
+		</tr>
+		<tr>
+			<td class="concordgrey">
+				Amount of cache devoted to users&rsquo; save-data
+				<br>
+				(saved / categorised queries)
+			</td>
+			<td class="concordgeneral">
+				<?php
+				
+				list($user_size_in_bytes) 
+					= mysql_fetch_row(do_mysql_query("select sum(file_size) from saved_queries where saved !=". CACHE_STATUS_UNSAVED));
+				if (empty($user_size_in_bytes))
+					$user_size_in_bytes = 0;
+				echo number_format(((float)$user_size_in_bytes) / 1024.0, 0)
+					, " KB<br/>("
+					, number_format( ( ((float)$user_size_in_bytes) / ((float)$size_in_bytes) ) * 100.0, 0)
+					, "% of current cache size)\n"
 					;
 				 
 				?>
@@ -316,12 +334,286 @@ function printquery_querycachecontrol()
 
 function printquery_dbcachecontrol()
 {
-	//TODO
-	//TODO
-	//TODO
-	//TODO
-	//TODO
-	echo '<p class="errormessage">We\'re sorry, this function has not been built yet.</p>';
+	global $Config;
+
+	php_execute_time_unlimit();
+
+	$db_result = do_mysql_query("select * from saved_dbs");
+	$n_entries = mysql_num_rows($db_result);
+
+	$expected_tables = array(); /* note, because this list will be big, we insert the entries as keys not values (for lookup speed)*/
+	while (false !== ($o = mysql_fetch_object($db_result)))
+		$expected_tables[$o->dbname] = $o;
+	mysql_data_seek($db_result, 0);
+	
+	
+	$tables_result = do_mysql_query("show table status like 'db_%'");
+	$n_tables = mysql_num_rows($tables_result);
+	
+	$entries_with_no_table = $expected_tables;
+	$tables_with_no_entry = array();
+	while (false !== ($o = mysql_fetch_object($tables_result)))
+		if (isset($expected_tables[$o->Name]))
+			unset($entries_with_no_table[$o->Name]);
+		else
+			$tables_with_no_entry[$o->Name] = $o;
+	
+	?>
+
+	<table class="concordtable" width="100%">
+		<tr>
+			<th class="concordtable" colspan="2">User database cache control</th>
+		</tr>
+		<tr>
+			<td class="concordgrey" colspan="2">
+				<p class="spacer">&nbsp;</p>
+				<p>
+					The <b>user database cache</b> contains MySQL tables extracted from query results for sorting, collocations, distribution etc., 
+					created dynamically upon user request.
+				</p>
+				<p>
+					A list of correctly-cached user databases for each corpus can be found in that corpus's interface 
+					(under &ldquo;Cached databases&rdquo;). 
+				</p>
+				<p>
+					<a href="index.php?admFunction=execute&function=delete_db_overflow&locationAfter=index.php%3FthisF%3DdbCacheControl%26uT%3Dy&uT=y">
+					Click here to run a cache-overflow check for the user database cache</a>
+					(this will delete old tables until the total cache size falls under the limit). 
+				</p>
+				<p class="spacer">&nbsp;</p>
+			</td>
+		</tr>
+		<tr>
+			<td class="concordgrey" width="50%">
+				Maximum user-database cache size (set in the configuration file)
+			</td>
+			<td class="concordgeneral">
+				<?php echo number_format(((float)$Config->db_cache_size_limit)/1024.0), " KB\n"; ?>
+			</td>
+		</tr>
+		<tr>
+			<td class="concordgrey">
+				Current user-database cache size
+			</td>
+			<td class="concordgeneral">
+				<?php
+				
+				list($size_in_bytes) = mysql_fetch_row(do_mysql_query("select sum(db_size) from saved_dbs"));
+				if (empty($size_in_bytes))
+					$size_in_bytes = 0;
+				echo number_format(((float)$size_in_bytes) / 1024.0, 0)
+					, " KB<br/>("
+					, number_format( ( ((float)$size_in_bytes) / ((float)$Config->db_cache_size_limit) ) * 100.0, 0)
+					, "% of maximum)\n"
+					;
+				 
+				?>
+			</td>
+		</tr>
+		<tr>
+			<td class="concordgrey">
+				Number of entries in the user-database list
+			</td>
+			<td class="concordgeneral">
+				<?php echo number_format($n_entries), "\n"; ?>
+			</td>
+		</tr>
+		<tr>
+			<td class="concordgrey">
+				Actual number of user-database tables
+				<br/>
+				(if  greater or lesser than expected, there may be a leak!)
+			</td>
+			<td class="concordgeneral">
+				<?php echo number_format($n_tables); ?>
+			</td>
+		</tr>
+
+	</table>
+	
+	<?php 
+	/* before anything else: a by-corpus breakdown. */
+	$result = do_mysql_query("select corpus, sum(db_size) as size, count(*) as n_entries from saved_dbs group by corpus order by size desc limit 20");
+	
+	?>
+	<table class="concordtable" width="100%">
+		<tr>
+			<th class="concordtable" colspan="4">User database cache by corpus (top 20!)</th>
+		</tr>
+		<tr>
+			<th class="concordtable">Corpus</th>
+			<th class="concordtable">Number of cached user databases</th>
+			<th class="concordtable">Total size (K)</th>
+			<th class="concordtable">Actions</th>
+		</tr>
+		
+		<?php 
+		while (false !== ($o = mysql_fetch_object($result)))
+			if (!empty($o->corpus))
+				echo "\n\t\t\t<tr>"
+	 				, '<td class="concordgeneral" align="center">', $o->corpus , '</td>'
+	 				, '<td class="concordgeneral" align="center">', number_format($o->n_entries, 0), '</td>'
+	 				, '<td class="concordgeneral" align="center">', number_format(((float)$o->size)/1024.0, 0), '</td>'
+	 				, '<td class="concordgeneral" align="center"><a class="menuItem" href="../'
+	 				, $o->corpus
+	 				, '/index.php?thisQ=cachedDatabases&uT=y">[View this corpus\'s cached user databases]</a></td>'
+	 				, '</tr>'
+	 				;
+		?>
+
+	</table>
+
+							
+	<table class="concordtable" width="100%">
+		<tr>
+			<th class="concordtable" colspan="5">User-database cache leak monitor</th>
+		</tr>
+		<tr>
+			<td class="concordgrey" colspan="5">
+				<p>
+					This table lists user-databases that are present in the MySQL database,
+					but do not correspond to any entry in the saved-databases cache monitor table. 
+				</p>
+				<p>
+					It is quite likely that these result from glitches in CQPweb and should be deleted.
+				</p>
+				<p>
+					Note that these tables are not counted towards the size limit of the cache,
+					and so if they are (individually or collectively) large, MySQL may be using 
+					substantially more space for user databases than the size limit would suggest.
+				</p>
+			</td>
+		</tr>	
+		<tr>
+			<th class="concordtable">Table name</th>
+			<th class="concordtable">Size (K)</th>
+			<th class="concordtable">Date created</th>
+			<th class="concordtable">Date modified</th>
+			<th class="concordtable">Delete</th>
+		</tr>
+		<form action="index.php">
+			<input type="hidden" name="admFunction" value="deleteDbLeak">
+			<?php
+
+			if (empty($tables_with_no_entry))
+			{
+				?>
+				
+				<tr>
+					<td colspan="5" class="concordgrey" align="center">
+						<p>
+							There are <b>no</b> stray user-database tables in MySQL that lack a matching entry in the user-database cache record.
+						</p>
+					</td>
+				</tr>
+	
+				<?php
+			}
+			else
+			{
+				foreach ($tables_with_no_entry as $info)
+					echo "\n\t\t<tr>"
+						, '<td class="concordgrey">', $info->Name, '</td>'
+						, '<td class="concordgrey" align="right">', number_format(((float)($info->Data_length + $info->Index_length))/1024.0, 0), '</td>'
+						, '<td class="concordgrey" align="center">', $info->Create_time, '</td>'
+						, '<td class="concordgrey" align="center">', $info->Update_time, '</td>'
+						, '<td class="concordgrey" align="center"><input type="checkbox" name="del_', $info->Name, '" value="1"></td>'
+						, "</tr>\n"
+						;
+				?>
+				
+				<tr>
+					<td class="concordgeneral" align="center" colspan="5">
+						<input type="submit" value="Click here to delete selected stray tables">
+					</td>
+				</tr>
+			
+				<?php
+			}
+
+			?>
+			
+			<input type="hidden" name="uT" value="y">
+			
+		</form>
+
+	</table>
+	
+	
+	<!-- END OF FIRST MONITOR, START OF SECOND -->
+	
+	
+	<table class="concordtable" width="100%">
+		<tr>
+			<th class="concordtable" colspan="5">User databases with missing data</th>
+		</tr>
+		<tr>
+			<td class="concordgrey" colspan="5">
+				<p>
+					This table lists user databases for which a record exists, but where the actual
+					MySQL table seems to be missing.
+					It is quite likely that these result from glitches in CQPweb.
+				</p>
+			</td>
+		</tr>	
+		<tr>
+			<th class="concordtable">Table name</th>
+			<th class="concordtable">User</th>
+			<th class="concordtable">Corpus</th>
+			<th class="concordtable">Last-used date</th>
+			<th class="concordtable">Mark for deletion</th>
+		</tr>
+		
+		<form method="get" action="index.php">
+			<input type="hidden" name="admFunction" value="deleteDbLeakDbEntries">
+
+			<?php
+	
+			if (empty($entries_with_no_table))
+			{
+				?>
+				
+				<tr>
+					<td colspan="5" class="concordgrey" align="center">
+						<p>
+							There are <b>no</b> entries in the user-database cache with missing tables.
+						</p> 
+					</td>
+				</tr>
+	
+				<?php
+			}
+			else
+			{
+				foreach ($entries_with_no_table as $info)
+					echo "\n\t\t<tr>"
+						, '<td class="concordgrey">', $info->dbname, '</td>'
+						, '<td class="concordgrey" align="center">', $info->user, '</td>'
+						, '<td class="concordgrey" align="center">', $info->corpus, '</td>'
+						, '<td class="concordgrey" align="center">', date(CQPWEB_UI_DATE_FORMAT, $info->create_time), '</td>'
+						, '<td class="concordgrey" align="center">'
+						, '<input type="checkbox" name="dl_', $info->dbname, '" value="1">'
+						, '</td>'
+						, "</tr>\n"
+						;
+				?>
+		
+				<tr>
+					<td class="concordgeneral" align="center" colspan="5">
+						<input type="submit" value="Click here to delete selected cache entries">
+					</td>
+				</tr>
+				
+				<?php
+			}
+			
+			?>
+			
+			<input type="hidden" name="uT" value="y">
+		</form>
+	</table>
+	
+	<?php 
 }
 
 
@@ -524,7 +816,7 @@ function printquery_freqtablecachecontrol()
 				<p>
 					Note that these tables are not counted towards the size limit of the cache,
 					and so if they are (individually or collectively) large, MySQL may be using 
-					ubstantially more space for frequency tables than the size limit would suggest.
+					substantially more space for frequency tables than the size limit would suggest.
 				</p>
 			</td>
 		</tr>	
@@ -616,6 +908,9 @@ function printquery_freqtablecachecontrol()
 			<th class="concordtable">Components missing</th>
 <!-- 			<th class="concordtable">Mark for deletion</th> -->
 		</tr>
+		
+		
+<!-- 		<?php /* TODO add the delete function */ ?> -->
 		
 <!-- 		<form method="get" action="index.php"> -->
 		
@@ -772,8 +1067,10 @@ function printquery_restrictioncachecontrol()
  				, '</td>'
 				, '<td class="concordgeneral" align="center">', number_format(((float)strlen($o->data)) / 1024.0, 1), '</td>'
 				, '<td class="concordgeneral" align="center">', date(CQPWEB_UI_DATE_FORMAT, $o->cache_time), '</td>'
-				, '<td class="concordgeneral" align="center"><a href="index.php?admFunction=execute&function=delete_restriction_from_cache&args='
-					, $o->id, '&locationAfter=', urlencode('index.php?thisF=restrictionCacheControl&uT=y'), '&uT=y">[x]</a></td>'
+				, '<td class="concordgeneral" align="center">'
+ 					, '<a class="menuItem" href="index.php?admFunction=execute&function=delete_restriction_from_cache&args='
+					, $o->id, '&locationAfter=', urlencode('index.php?thisF=restrictionCacheControl&uT=y'), '&uT=y">[x]</a>'
+ 				, '</td>'
 				, "</tr>\n"
 				;
 		?>
@@ -918,4 +1215,76 @@ function printquery_subcorpuscachecontrol()
 	<?php
 }
 
+
+
+
+function printquery_tempcachecontrol()
+{
+	?>
+	<table class="concordtable" width="100%">
+		<tr>
+			<th class="concordtable" colspan="5">Temporary database control</th>
+		</tr>
+
+		<tr>
+			<td class="concordgrey" colspan="5">
+				<p>
+					This table lists temporary-data tables currently present in the MySQL database.
+					These temporary tables are mostly used for frequency-table generation.
+				</p>
+				<p>
+					Tables with recent creation times are probably being used <em>right now</em>.
+				</p>
+				<p>
+					Tables with creation  dates more than a day or two ago are almost certainly the
+					result of glitches - they should have been deleted but have not been.
+					Normally, these tables should be manually deleted (as they take up disk space
+					unnecessarily).
+				</p>
+			</td>
+		</tr>
+		<tr>
+			<th class="concordtable">Table name</th>
+			<th class="concordtable">Date created</th>
+			<th class="concordtable">Date updated</th>
+			<th class="concordtable">Size</th>
+			<th class="concordtable">Delete</th>
+		</tr>
+		
+		<?php
+		
+		$result = do_mysql_query("show table status where Name regexp '^(__freqmake|__tempfreq|temporary_freq_corpus_)'");
+		
+		if (1 > mysql_num_rows($result))
+		{
+			?>
+			
+			<tr>
+				<td class="concordgrey" colspan="5">
+					<p>
+						There are currently <b>no</b> temporary data tables in the system.
+					</p>
+				</td>
+			</tr>
+			<?php
+		}
+		else
+			while (false !== ($table = mysql_fetch_object($result)))
+				echo "\n\t\t\t<tr>"
+ 					, '<td class="concordgeneral">', $table->Name, '</td>'
+ 					, '<td class="concordgeneral" align="center">', $table->Create_time, '</td>'
+ 					, '<td class="concordgeneral" align="center">', empty($table->Update_time)?'-':$table->Update_time, '</td>'
+ 					, '<td class="concordgeneral" align="right">', number_format(($table->Data_length+$table->Index_length)/1024), ' KB</td>'
+ 					, '<td class="concordgeneral" align="center">'
+ 						, '<a class="menuItem" href="index.php?admFunction=execute&function=delete_mysql_table&args='
+						, $table->Name, '&locationAfter=', urlencode('index.php?thisF=tempCacheControl&uT=y'), '&uT=y">[x]</a>'
+ 					, '</td>'
+ 					, '</tr>'
+ 					;
+		?>
+
+	</table>
+
+	<?php
+}
 

@@ -37,10 +37,10 @@
  * Builds and returns an HTML string containing the search-box and associated UI elements 
  * used in the Standard and Restricted Query forms. 
  * 
- * @param string $qstring               A search pattern that will be inserted into the query textbox Or NULL.
- * @param string $qmode                 The query-mode to pre-set in the query control. Or NULL.
- * @param string $qsubcorpus            String: preset subcorpus. Only works if $show_mini_restrictions is true. 
- * @param bool $show_mini_restrictions  Set to true if you want the "simple restriction" control for Standard Query.
+ * @param string $qstring                 A search pattern that will be inserted into the query textbox Or an empty value.
+ * @param string $qmode                   The query-mode to pre-set in the query control. Or an empty value.
+ * @param string $qsubcorpus              String: preset subcorpus. Only works if $show_mini_restrictions is true. 
+ * @param bool   $show_mini_restrictions  Set to true if you want the "simple restriction" control for Standard Query.
  */
 function printquery_build_search_box($qstring, $qmode, $qsubcorpus, $show_mini_restrictions)
 {
@@ -48,8 +48,23 @@ function printquery_build_search_box($qstring, $qmode, $qsubcorpus, $show_mini_r
 	global $Corpus;
 	global $User;
 	
+	
 	/* GET VARIABLES READY: contents of query box */
 	$qstring = ( ! empty($qstring) ? escape_html(prepare_query_string($qstring)) : '' );
+	
+	if ($Config->show_match_strategy_switcher)
+	{
+		if (preg_match('/^\(\?\s*(\w+)\s*\)\s*/', $qstring, $m))
+		{
+			if (in_array($m[1], array('traditional', 'shortest', 'longest')))
+				$strategy_insert = $m[1];
+			else if ('standard' == $m[1])
+				$strategy_insert = '0';
+			$qstring = preg_replace('/^'.preg_quote($m[0], '/').'/', '', $qstring);
+		}
+		else
+			$strategy_insert = '0';
+	}
 	
 
 	/* GET VARIABLES READY: the query mode. */
@@ -66,6 +81,7 @@ function printquery_build_search_box($qstring, $qmode, $qsubcorpus, $show_mini_r
 	foreach ($modemap as $mode => $modedesc)
 		$mode_options .= "\n\t\t\t\t\t\t\t<option value=\"$mode\"" . ($qmode == $mode ? ' selected="selected"' : '') . ">$modedesc</option>";
 
+	
 	/* GET VARIABLES READY: hidden attribute help */
 	$style_display = ('cqp' != $qmode ? "display: none" : '');
 	$mode_js       = ('cqp' != $qmode ? 'onChange="if ($(\'#qmode\').val()==\'cqp\') $(\'#searchBoxAttributeInfo\').slideDown();"' : '');
@@ -82,6 +98,21 @@ function printquery_build_search_box($qstring, $qmode, $qsubcorpus, $show_mini_r
 	$s_atts = "\n";
 	foreach(list_xml_all($Corpus->name) as $s=>$s_desc)
 		$s_atts .= "\t\t\t\t\t<tr>\t<td><code>&lt;{$s}&gt;</code></td>\t<td>" . escape_html($s_desc) . "</td>\t</tr>\n";
+	if ($s_atts == "\n")
+		$s_atts = "\n<tr>\t<td colspan='2'><code>None.</code></td>\t</tr>\n";
+
+	/* and, while we do the a-atts, simultaneously,  GET VARIABLES READY: aligned corpus display */
+	$a_atts = "\n";
+	$align_options = '';
+	foreach(check_alignment_permissions(list_corpus_alignments($Corpus->name)) as $a=>$a_desc)
+	{
+		$a_atts .= "\t\t\t\t\t<tr>\t<td><code>&lt;{$a}&gt;</code></td>\t<td>" . escape_html($a_desc) . "</td>\t</tr>\n";
+		$align_options .= "\n\t\t\t\t\t\t\t<option value=\"$a\">Show text from parallel corpus &ldquo;" . escape_html($a_desc) . "&rdquo;</option>";
+	}
+	if ($a_atts == "\n")
+		$a_atts = "\n<tr>\t<td colspan='2'><code>None.</code></td>\t</tr>\n";
+	/* we do this for a-atts but not p/s-atts because there is always at least word and at least text/text_id */
+
 
 
 	/* GET VARIABLES READY: hits per page select */
@@ -91,10 +122,65 @@ function printquery_build_search_box($qstring, $qmode, $qsubcorpus, $show_mini_r
 			. ($Config->default_per_page == $val ? ' selected="selected"' : '')
 			. ">$val</option>"
 			;
-	
+
 	if ($User->is_admin())
 		$pp_options .=  "\n\t\t\t\t\t\t\t<option value=\"all\">show all</option>";
 
+
+
+	/* ASSEMBLE ALIGNMENT DISPLAY CONTROL */
+	if (empty($align_options))
+		$parallel_html = '';
+	else
+		$parallel_html = <<<END_PARALLEL_ROW
+
+				<tr>
+					<td class="basicbox">Display alignment:</td>
+					<td class="basicbox">
+						<select name="showAlign">
+							<option selected="selected">Do not show aligned text in parallel corpus</option>
+							$align_options
+						</select>
+					</td>
+				</tr>
+
+END_PARALLEL_ROW;
+
+	
+	
+	/* ASSEMBLE MATCH STRATEGY SWITCHER */
+	
+	// TODO: if there is a query insert, trim off the strategy switcher 
+	
+	/* this relies on versions of BOTH the CWB core AND CEQL.pm more recent than 2017-07-01;
+	 * when CQPweb reaches v 3.5 and demands CWB v 3.5, this can be made non-conditional */ 
+	if (! $Config->show_match_strategy_switcher)
+		$strategy_html = '';
+	else
+	{
+		$select_standard    = ( $strategy_insert == '0'           ? ' selected="selected"' : '' );
+		$select_longest     = ( $strategy_insert == 'longest'     ? ' selected="selected"' : '' );
+		$select_shortest    = ( $strategy_insert == 'shortest'    ? ' selected="selected"' : '' );
+		$select_traditional = ( $strategy_insert == 'traditional' ? ' selected="selected"' : '' );
+		
+		$strategy_html = <<<END_STRATEGY_ROW
+
+				<tr>
+					<td class="basicbox">Match strategy:</td>
+					<td class="basicbox">
+						<select name="qstrategy">
+							<option value="0"$select_standard>Standard</option>
+							<!-- Note that because "standard" is normal, we do not actually want
+							     to use a flag for it (or all queries would end up with a modifier!) -->
+							<option value="longest"$select_longest>Longest-possible match</option>
+							<option value="shortest"$select_shortest>Shortest-possible match</option>
+							<option value="traditional"$select_traditional>Old-style CQP matching</option>
+						</select>
+					</td>
+				</tr>
+	
+END_STRATEGY_ROW;
+	}
 
 
 	/* ASSEMBLE THE RESTRICTIONS MINI-CONTROL TOOL */
@@ -107,7 +193,7 @@ function printquery_build_search_box($qstring, $qmode, $qsubcorpus, $show_mini_r
 		$restrict_options = "\n\t\t\t\t\t\t\t<option value=\"\"" 
 			. ( empty($subcorpus) ? ' selected="selected"' : '' )
 			. '>None (search whole corpus)</option>'
-			; 
+			;
 		
 		$field = $Corpus->primary_classification_field;
 		foreach (metadata_category_listdescs($field, $Corpus->name) as $h => $c)
@@ -116,7 +202,7 @@ function printquery_build_search_box($qstring, $qmode, $qsubcorpus, $show_mini_r
 		/* list the user's subcorpora for this corpus, including the last set of restrictions used */
 		
 		$result = do_mysql_query("select * from saved_subcorpora where corpus = '{$Corpus->name}' and user = '{$User->username}' order by name");
-	
+		
 		while (false !== ($sc = Subcorpus::new_from_db_result($result)))
 		{
 			if ($sc->name == '--last_restrictions')
@@ -149,8 +235,7 @@ function printquery_build_search_box($qstring, $qmode, $qsubcorpus, $show_mini_r
 
 END_RESTRICT_ROW;
 
-	} /* end of $show_mini_restrictions */
-
+	} /* end of $show_mini_restrictions is true */
 
 
 	/* ALL DONE: so assemble the HTML from the above variables && return it. */
@@ -159,7 +244,7 @@ END_RESTRICT_ROW;
 
 
 			&nbsp;<br/>
-			
+
 			<textarea 
 				name="theData" 
 				rows="5" 
@@ -167,45 +252,15 @@ END_RESTRICT_ROW;
 				style="font-size: 16px"  
 				spellcheck="false" 
 			>$qstring</textarea>
-			
-			<div id="searchBoxAttributeInfo" style="$style_display">
-				<table>
-					<tr>
-						<td colspan="2"><b>P-attributes in this corpus:</b></td>
-					</tr>
-					<tr>
-						<td width="40%"><code>word</code></td>
-						<td><p>Main word-token attribute</p></td>
-					</tr>
-			
-					$p_atts
-		
-					<tr>
-						<td colspan="2">&nbsp;</td>
-					</tr>
-					<tr>
-						<td colspan="2"><b>S-attributes in this corpus:</b></td>
-					</tr>
-		
-					$s_atts
-					
-				</table>
-				<p>
-					<a target="_blank" href="http://cwb.sourceforge.net/files/CQP_Tutorial/"
-						onmouseover="return escape('Detailed help on CQP syntax')">
-						Click here to open the full CQP-syntax tutorial
-					</a>
-				</p>
-			</div>
 
 			&nbsp;<br/>
 			&nbsp;<br/>
 
 
-			<table>	
+			<table>
 				<tr>
 					<td class="basicbox">Query mode:</td>
-				
+
 					<td class="basicbox">
 						<select id="qmode" name="qmode" $mode_js>
 							$mode_options
@@ -217,33 +272,80 @@ END_RESTRICT_ROW;
 						</a>
 					</td>
 				</tr>
-			
+
 				<tr>
 					<td class="basicbox">Number of hits per page:</td>
-					<td class="basicbox">	
+					<td class="basicbox">
 						<select name="pp">
 							<option value="count">count hits</option>
-							
+
 							$pp_options
-							
+
 						</select>
 					</td>
 				</tr>
 
+
+				$parallel_html
+
+
+				$strategy_html
+
+
 				$restrictions_html
+
 
 				<tr>
 					<td class="basicbox">&nbsp;</td>
-					<td class="basicbox">				
+					<td class="basicbox">
 						<input type="submit" value="Start Query"/>
 						<input type="reset" value="Reset Query"/>
 					</td>
 				</tr>
 			</table>
 
+			<div id="searchBoxAttributeInfo" style="$style_display">
+				<table>
+					<tr>
+						<td colspan="2"><b>P-attributes in this corpus:</b></td>
+					</tr>
+					<tr>
+						<td width="40%"><code>word</code></td>
+						<td><p>Main word-token attribute</p></td>
+					</tr>
+
+					$p_atts
+
+					<tr>
+						<td colspan="2">&nbsp;</td>
+					</tr>
+					<tr>
+						<td colspan="2"><b>S-attributes in this corpus:</b></td>
+					</tr>
+
+					$s_atts
+
+					<tr>
+						<td colspan="2">&nbsp;</td>
+					</tr>
+					<tr>
+						<td colspan="2"><b>A-attributes in this corpus:</b></td>
+					</tr>
+
+					$a_atts
+
+				</table>
+				<p>
+					<a target="_blank" href="http://cwb.sourceforge.net/files/CQP_Tutorial/"
+						onmouseover="return escape('Detailed help on CQP syntax')">
+						Click here to open the full CQP-syntax tutorial
+					</a>
+				</p>
+			</div>
+
 
 END_OF_HTML;
-	
+
 }
 
 
@@ -256,16 +358,16 @@ function printquery_search()
 
 	?>
 	<table class="concordtable" width="100%">
-	
+
 	<tr>
 		<th class="concordtable">Standard Query</th>
 	</tr>
-	
+
 	<tr>
 		<td class="concordgeneral">
-		
+
 			<form action="concordance.php" accept-charset="UTF-8" method="get"> 
-		
+
 				<?php
 				echo printquery_build_search_box(
 					isset($_GET['insertString'])    ? $_GET['insertString']    : NULL,
@@ -274,12 +376,12 @@ function printquery_search()
 					true
 				);
 				?>
-				
+
 				<input type="hidden" name="uT" value="y"/>
 			</form>
 		</td>
 	</tr>
-	
+
 	</table>
 	<?php
 }
@@ -312,15 +414,15 @@ function printquery_restricted()
 
 	?>
 	<table class="concordtable" width="100%">
-	
+
 		<tr>
 			<th class="concordtable" colspan="3">Restricted Query</th>
 		</tr>
-	
+
 		<form action="concordance.php" accept-charset="UTF-8" method="get"> 
 			<tr>
 				<td class="concordgeneral" colspan="3">
-			
+
 					<?php
 					echo printquery_build_search_box(
 						isset($_GET['insertString']) ? $_GET['insertString']  : NULL,
@@ -328,18 +430,19 @@ function printquery_restricted()
 						NULL,
 						false
 					);
-					?>	
+					?>
+
 				</td>
 			</tr>
-						
+
 			<?php
 			echo printquery_build_restriction_block($insert_r, 'query');
 			?>
-			
+
 			<input type="hidden" name="uT" value="y"/>
 		</form>
 	</table>
-	
+
 	<?php
 }
 
@@ -358,7 +461,7 @@ function printquery_restricted()
 function printquery_build_restriction_block($insert_restriction, $thing_to_produce)
 {
 	global $Corpus;
-	
+
 	$block = '
 		<tr>
 			<th colspan="3" class="concordtable">
@@ -366,27 +469,27 @@ function printquery_build_restriction_block($insert_restriction, $thing_to_produ
 			</th>
 		</tr>
 		';
-		
-	
+
+
 	/* TEXT METADATA */
-	
+
 	/* get a list of classifications and categories from mysql; print them here as tickboxes */
-	
+
 	$block .= '<tr><input type="hidden" name="del" size="-1" value="begin" />';
 
 	$classifications = metadata_list_classifications();
-	
+
 	$header_row = array();
 	$body_row = array();
 	$i = 0;
-	
+
 	foreach ($classifications as $c)
 	{
 		$header_row[$i] = '<td width="33%" class="concordgrey" align="center">' .escape_html($c['description']) . '</td>';
 		$body_row[$i] = '<td class="concordgeneral" valign="top" nowrap="nowrap">';
-		
+
 		$catlist = metadata_category_listdescs($c['handle']);
-		
+
 		foreach ($catlist as $handle => $desc)
 		{
 			$t_value = '-|' . $c['handle'] . '~' . $handle;
@@ -394,13 +497,13 @@ function printquery_build_restriction_block($insert_restriction, $thing_to_produ
 			$body_row[$i] .= '<input type="checkbox" name="t" value="' . $t_value . '" ' . $check 
 				. '/> ' . ($desc == '' ? $handle : escape_html($desc)) . '<br/>';
 		}
-		
+
 
 		/* whitespace is gratuitous for readability */
 		$body_row[$i] .= '
 			&nbsp;
 			</td>';
-		
+
 		$i++;
 		/* print three columns at a time */
 		if ( $i == 3 )
@@ -413,7 +516,7 @@ function printquery_build_restriction_block($insert_restriction, $thing_to_produ
 			$i = 0;
 		}
 	}
-	
+
 	if ($i > 0) /* not all cells printed */
 	{
 		while ($i < 3)
@@ -429,7 +532,7 @@ function printquery_build_restriction_block($insert_restriction, $thing_to_produ
 			';
 	}
 
-	
+
 	if (empty($classifications))
 		$block .= '<tr><td colspan="3" class="concordgrey" align="center">
 			&nbsp;<br/>
@@ -440,9 +543,9 @@ function printquery_build_restriction_block($insert_restriction, $thing_to_produ
 
 	$classification_elements_matrix = array();
 	$idlink_elements_matrix = array();
-	
-	$xml = get_xml_all_info($Corpus->name);
-	
+
+	$xml = get_all_xml_info($Corpus->name);
+
 
 	foreach ($xml as $x)
 		if ($x->datatype == METADATA_TYPE_NONE)
@@ -454,7 +557,7 @@ function printquery_build_restriction_block($insert_restriction, $thing_to_produ
 			$classification_elements_matrix[$x->att_family][] = $x->handle;
 		else if ($x->datatype == METADATA_TYPE_IDLINK)
 		{
-			foreach (get_all_idlink_info($Corpus->name, $x->handle) as $k=> $field)
+			foreach (get_all_idlink_field_info($Corpus->name, $x->handle) as $k=> $field)
 				if ($field->datatype == METADATA_TYPE_CLASSIFICATION)
 					$idlink_elements_matrix[$x->handle][$k] = $field;
 		}
@@ -463,13 +566,15 @@ function printquery_build_restriction_block($insert_restriction, $thing_to_produ
 	foreach($classification_elements_matrix as $k=>$c)
 		if (empty($c))
 			unset($classification_elements_matrix[$k]);
-// show_Var($idlink_elements_matrix);
-//show_Var($classification_elements_matrix);
 
 	/* we now know which elements we need a display for. */
 
 	foreach ($classification_elements_matrix as $el => $class_atts)
 	{
+		/* We have already done <text>-level, above. Don't allow <text> to be a sub-text element. */
+		if ('text' == $el)
+			continue;
+
 		$block .= <<<END_HTML
 			<tr>
 				<th colspan="3" class="concordtable">
@@ -477,20 +582,20 @@ function printquery_build_restriction_block($insert_restriction, $thing_to_produ
 				</th>
 			</tr>
 END_HTML;
-					
+
 		$header_row = array();
 		$body_row = array();
 		$i = 0;
-		
+
 		foreach($class_atts as $c)
 		{
 			$header_row[$i] = '<td width="33%" class="concordgrey" align="center">' . $xml[$c]->description . '</td>';
 			$body_row[$i] = '<td class="concordgeneral" valign="top" nowrap="nowrap">';
-			
+
 			$catlist = xml_category_listdescs($Corpus->name, $c);
 
 			$t_base_c = preg_replace("/^{$el}_/",  '', $c);
-			
+
 			foreach ($catlist as $handle => $desc)
 			{
 				$t_value = $el . '|'. $t_base_c . '~' . $handle;
@@ -498,12 +603,12 @@ END_HTML;
 				$body_row[$i] .= '<input type="checkbox" name="t" value="' . $t_value . '" ' . $check 
 					. '/> ' . ($desc == '' ? $handle : escape_html($desc)) . '<br/>';
 			}
-			
+
 			/* whitespace is gratuitous for readability */
 			$body_row[$i] .= '
 				&nbsp;
 				</td>';
-						
+
 			$i++;
 			/* print three columns at a time */
 			if ( $i == 3 )
@@ -532,10 +637,10 @@ END_HTML;
 			';
 		}
 	}
-	
+
 	//TODO
 	// a lot of stuff is now repeated 3 times, for text metadata, xml classification, and idlink classifications. Look at factoring some of it out. 
-	
+
 
 
 	foreach ($idlink_elements_matrix as $el => $idlink_classifications)
@@ -548,21 +653,20 @@ END_HTML;
 				</th>
 			</tr>
 END_HTML;
-		
+
 		$header_row = array();
 		$body_row = array();
 		$i = 0;
 
 		foreach ($idlink_classifications as $field_h => $field_o)
 		{
-			
 			$header_row[$i] = '<td width="33%" class="concordgrey" align="center">' . $field_o->description . '</td>';
 			$body_row[$i] = '<td class="concordgeneral" valign="top" nowrap="nowrap">';
-			
+
 			$catlist = idlink_category_listdescs($Corpus->name, $field_o->att_handle, $field_h);
 
 			$t_base = preg_replace("/^{$xml[$el]->att_family}_/",  '', $el) . '/' . $field_h;
-			
+
 			foreach ($catlist as $handle => $desc)
 			{
 				$t_value = $xml[$el]->att_family . '|'. $t_base . '~' . $handle;
@@ -570,12 +674,12 @@ END_HTML;
 				$body_row[$i] .= '<input type="checkbox" name="t" value="' . $t_value . '" ' . $check 
 					. '/> ' . ($desc == '' ? $handle : escape_html($desc)) . '<br/>';
 			}
-			
+
 			/* whitespace is gratuitous for readability */
 			$body_row[$i] .= '
 				&nbsp;
 				</td>';
-						
+
 			$i++;
 			/* print three columns at a time */
 			if ( $i == 3 )
@@ -603,12 +707,12 @@ END_HTML;
 			<tr>
 			';
 		}
-	}	
-	
+	}
+
 	$block .= '</tr>
 		<input type="hidden" name="del" size="-1" value="end" />
 		';
-	
+
 	return $block;
 }
 
@@ -619,10 +723,10 @@ END_HTML;
 function printquery_lookup()
 {
 	/* much of this is the same as the form for freq list, but simpler */
-	
+
 	/* do we want to allow an option for "showing both words and tags"? */
 	$primary_annotation = get_corpus_metadata('primary_annotation');
-	
+
 	$annotation_available = ( empty($primary_annotation) ? false : true );
 
 ?>
@@ -631,7 +735,7 @@ function printquery_lookup()
 	<tr>
 		<th class="concordtable" colspan="2">Word lookup</th>
 	</tr>
-	
+
 	<tr>
 		<td class="concordgrey" colspan="2">
 			&nbsp;<br/>
@@ -640,7 +744,7 @@ function printquery_lookup()
 			<br/>&nbsp;
 		</td>
 	</tr>
-	
+
 	<form action="redirect.php" method="get">
 		<tr>
 			<td class="concordgeneral">Enter the word-form you want to look up</td>
@@ -676,7 +780,7 @@ function printquery_lookup()
 						</td>
 						<td class="basicbox" valign="center">
 							... the pattern you specified
-						</td>							
+						</td>
 					</tr>
 				</table>
 				<!--
@@ -690,8 +794,8 @@ function printquery_lookup()
 				-->
 			</td>
 		</tr>
-		
-		<?php		
+
+		<?php
 		if ($annotation_available)
 		{
 			echo '
@@ -748,12 +852,12 @@ function printquery_keywords()
 {
 	global $Config;
 	global $Corpus;
-	
+
 	/* create the options for frequency lists to compare */
-	
+
 	/* needed for both local and public subcorpora */
-	$subc_mapper = get_subcorpus_name_mapper();	
-	
+	$subc_mapper = get_subcorpus_name_mapper();
+
 	/* subcorpora belonging to this user that have freqlists compiled (list of IDs returned) */
 	$subcorpora = list_freqtabled_subcorpora();
 
@@ -763,15 +867,15 @@ function printquery_keywords()
 	/* public freqlists - subcorpora (function returns associative array) */
 	$public_subcorpora = list_public_freqtables();
 
-	
+
 	$list_options = "<option value=\"__entire_corpus\">Whole of " . escape_html($Corpus->title) ."</option>\n";
-	
+
 	foreach ($subcorpora as $s)
 		$list_options .= "\t\t\t\t\t<option value=\"sc~$s\">Subcorpus: {$subc_mapper[$s]}</option>\n";
-	
+
 	$list_options_list2 = $list_options;
 	/* only list 2 has the "public" options */
-	
+
 	foreach ($public_corpora as $pc)
 		$list_options_list2 .= 
 			( $pc['corpus'] == $Corpus->name ? '' : 
@@ -779,25 +883,25 @@ function printquery_keywords()
  					. escape_html($pc['public_freqlist_desc']) 
 					. "</option>\n" )
 			);
-	
+
 	foreach ($public_subcorpora as $ps)
 		$list_options_list2 .= "\t\t\t\t\t<option value=\"ps~{$ps['freqtable_name']}\">
 			Public frequency list: subcorpus {$subc_mapper[$ps['query_scope']]} from corpus {$ps['corpus']}
 			</option>\n";
-	
+
 	/* and the options for selecting an attribute */
-	
+
 	$attribute = get_corpus_annotations();
-	
+
 	$att_options = '<option value="word">Word forms</option>
 		';
-	
+
 	foreach ($attribute as $k => $a)
 	{
 		$a = escape_html($a);
 		$att_options .= "<option value=\"$k\">$a</option>\n";
 	}
-		
+
 
 ?>
 <table class="concordtable" width="100%">
@@ -805,7 +909,7 @@ function printquery_keywords()
 	<tr>
 		<th class="concordtable" colspan="4">Keywords and key tags</th>
 	</tr>
-	
+
 	<tr>
 		<td class="concordgrey" colspan="4" align="center">
 			&nbsp;<br/>
@@ -814,7 +918,7 @@ function printquery_keywords()
 			<br/>&nbsp;
 		</td>
 	</tr>
-	
+
 	<form action="keywords.php" method="get">
 		<tr>
 			<td class="concordgeneral">Select frequency list 1:</td>
@@ -838,7 +942,7 @@ function printquery_keywords()
 				</select>
 			</td>
 		</tr>
-		
+
 		<tr>
 			<th class="concordtable" colspan="4">Options for keyword analysis:</th>
 		</tr>
@@ -864,7 +968,7 @@ function printquery_keywords()
 				</select>
 			</td>
 		</tr>
-		
+
 		<tr>
 			<td class="concordgeneral">
 				Significance cut-off point:
@@ -886,8 +990,8 @@ function printquery_keywords()
 				Use Šidák correction?
 			</td>
 		</tr>
-		
-		
+
+
 		<tr>
 			<td class="concordgeneral">Min. frequency (list 1):</td>
 			<td class="concordgeneral">
@@ -941,13 +1045,13 @@ function printquery_keywords()
 				<br>&nbsp;
 			</td>
 		</tr>
-		
+
 		<tr>
 			<th class="concordtable" colspan="4">
 				View unique words or tags on one frequency list:
 			</th>
 		</tr>
-		
+
 		<tr>
 			<td class="concordgeneral" colspan="2">Display items that occur in:</td>
 			<td class="concordgeneral" colspan="2">
@@ -982,30 +1086,29 @@ function printquery_freqlist()
 {
 	/* much of this is the same as the form for keywords, but simpler */
 	global $Corpus;
-	
+
 	/* create the options for frequency lists to compare */
-	
+
 	/* subcorpora belonging to this user that have freqlists compiled (list of IDs returned) */
 	$subcorpora = list_freqtabled_subcorpora();
 	/* public freqlists - corpora */
-	
+
 	$list_options = "<option value=\"__entire_corpus\">Whole of ". escape_html($Corpus->title) . "</option>\n";
-	
-	$subc_mapper = get_subcorpus_name_mapper();	
+
+	$subc_mapper = get_subcorpus_name_mapper();
 	foreach ($subcorpora as $s)
 		$list_options .= "<option value=\"$s\">Subcorpus: {$subc_mapper[$s]}</option>\n";
-	
+
 	/* and the options for selecting an attribute */
-	
+
 	$attribute = get_corpus_annotations();
-	
+
 	$att_options = '<option value="word">Word forms</option>
 		';
-	
+
 	foreach ($attribute as $k => $a)
 		$att_options .= "<option value=\"$k\">$a</option>\n";
-	
-	
+
 
 ?>
 <table class="concordtable" width="100%">
@@ -1013,15 +1116,15 @@ function printquery_freqlist()
 	<tr>
 		<th class="concordtable" colspan="2">Frequency lists</th>
 	</tr>
-	
+
 	<tr>
 		<td class="concordgrey" colspan="2" align="center">
-			You can view the frequency lists of the whole corpus and frequency lists for 
-			subcorpora you have created. <a href="index.php?thisQ=subcorpus&uT=y">Click 
+			You can view the frequency lists of the whole corpus and frequency lists for
+			subcorpora you have created. <a href="index.php?thisQ=subcorpus&uT=y">Click
 			here to create/view subcorpus frequency lists</a>.
 		</td>
 	</tr>
-	
+
 	<form action="freqlist.php" method="get">
 		<tr>
 			<td class="concordgeneral">View frequency list for ...</td>
@@ -1039,7 +1142,7 @@ function printquery_freqlist()
 				</select>
 			</td>
 		</tr>
-		
+
 		<tr>
 			<th class="concordtable" colspan="2">Frequency list option settings</th>
 		</tr>
@@ -1061,7 +1164,7 @@ function printquery_freqlist()
 		<tr>
 			<td class="concordgeneral">Filter the list by <em>frequency</em> - show only words/tags ...</td>
 			<td class="concordgeneral">
-				with frequency between 
+				with frequency between
 				<input type="text" name="flFreqLimit1" size="8" />
 				and
 				<input type="text" name="flFreqLimit2" size="8" />
@@ -1120,35 +1223,37 @@ function printquery_corpusmetadata()
 
 	?>
 	<table class="concordtable" width="100%">
-	
+
 		<tr>
-			<th colspan="2" class="concordtable">Metadata for <?php echo escape_html($Corpus->title); ?> 
+			<th colspan="2" class="concordtable">
+				Metadata for <?php echo escape_html($Corpus->title); ?>
 			</th>
 		</tr>
 
 	<?php
-	
+
 	/* set up the data we need */
-		
+
 	/* number of files in corpus */
+//TODO isn't this already in the obj as $Corpus->n_texts?
 	list($num_texts) = mysql_fetch_row(do_mysql_query("select count(text_id) from text_metadata_for_{$Corpus->name}"));
 	$num_texts = number_format((float)$num_texts);
-	
+
 	/* now get tokens / types */
 	$tokens = get_corpus_wordcount();
 	$types  = get_corpus_n_types();
 	$words_in_all_texts = empty($tokens) ? 'Cannot be calculated (wordcount not cached)'        : number_format((float)$tokens);
 	$types_in_corpus    = empty($types)  ? 'Cannot be calculated (frequency tables not set up)' : number_format((float)$types);
-	$type_token_ratio   = (empty($tokens)||empty($types)) 
-							? 'Cannot be calculated (type or token count not available)' 
+	$type_token_ratio   = (empty($tokens)||empty($types))
+							? 'Cannot be calculated (type or token count not available)'
 							: number_format( ((float)$types / (float)$tokens) , 4) . ' types per token';
-	
+
 
 	/* create a placeholder for the primary annotation's description */
 	$primary_annotation_string = $Corpus->primary_annotation;
 	/* the description itself will be grabbed when we scroll through the full list of annotations */
 
-	
+
 	?>
 		<tr>
 			<td width="50%" class="concordgrey">Corpus title</td>
@@ -1176,8 +1281,8 @@ function printquery_corpusmetadata()
 		</tr>
 
 	<?php
-	
-	
+
+
 	/* VARIABLE METADATA */
 
 	$result_variable = do_mysql_query("select * from corpus_metadata_variable where corpus = '{$Corpus->name}'");
@@ -1190,36 +1295,36 @@ function printquery_corpusmetadata()
 		else
 			$metadata['value'] = escape_html($metadata['value']);
 		?>
-		
+
 		<tr>
 			<td class="concordgrey"><?php echo escape_html($metadata['attribute']); ?></td>
 			<td class="concordgeneral"><?php echo $metadata['value']; ?></td>
 		</tr>
-		
+
 		<?php
 	}
-	
+
 	?>
-	
+
 		<tr>
 			<th class="concordtable" colspan="2">Text metadata and word-level annotation</th>
 		</tr>
 
 	<?php
-	
-	
+
+
 	/* TEXT CLASSIFICATIONS */
 
 	$result_textfields = do_mysql_query("select handle from text_metadata_fields where corpus = '{$Corpus->name}'");
 	$num_rows = mysql_num_rows($result_textfields);
 
 	?>
-	
+
 		<tr>
 			<td rowspan="<?php echo $num_rows; ?>" class="concordgrey">
 				The database stores the following information for each text in the corpus:
 			</td>
-			
+
 	<?php
 	$i = 1;
 	while (($metadata = mysql_fetch_row($result_textfields)) != false)
@@ -1237,7 +1342,7 @@ function printquery_corpusmetadata()
 		<tr>
 			<td class="concordgrey">The <b>primary</b> classification of texts is based on:</td>
 			<td class="concordgeneral">
-				<?php 
+				<?php
 				echo (empty($Corpus->primary_classification_field)
 					? 'A primary classification scheme for texts has not been set.'
 					: escape_html(metadata_expand_field($Corpus->primary_classification_field)))
@@ -1245,9 +1350,9 @@ function printquery_corpusmetadata()
 				?>
 			</td>
 		</tr>
-	<?php	
-	
-	
+	<?php
+
+
 	/* ANNOTATIONS */
 	/* get a list of annotations */
 	$result_annotations = do_mysql_query("select * from annotation_metadata where corpus = '{$Corpus->name}'");
@@ -1260,14 +1365,14 @@ function printquery_corpusmetadata()
 			</td>
 	<?php
 	$i = 1;
-	
+
 	while (($annotation = mysql_fetch_assoc($result_annotations)) != false)
 	{
 		echo '<td class="concordgeneral">';
 		if ($annotation['description'] != "")
 		{
 			echo escape_html($annotation['description']);
-			
+
 			/* while we're looking at the description, save it for later if this
 			 * is the primary annotation */
 			if ($primary_annotation_string == $annotation['handle'])
@@ -1279,13 +1384,12 @@ function printquery_corpusmetadata()
 		{
 			echo ' (';
 			if ($annotation['external_url'] != "")
-				echo '<a target="_blank" href="' . $annotation['external_url'] 
-					. '">' . $annotation['tagset'] . '</a>';
+				echo '<a target="_blank" href="', $annotation['external_url'], '">', $annotation['tagset'], '</a>';
 			else
 				echo $annotation['tagset'];
 			echo ')';
-		}	
-			
+		}
+
 		echo '</td></tr>';
 		if (($i) < $num_rows)
 			echo '<tr>';
@@ -1305,9 +1409,9 @@ function printquery_corpusmetadata()
 				?>
 			</td>
 		</tr>
-	<?php		
-	
-	
+	<?php
+
+
 	/* EXTERNAL URL */
 	if ( ! empty($Corpus->external_url) )
 	{
@@ -1324,8 +1428,148 @@ function printquery_corpusmetadata()
 		</tr>
 		<?php
 	}
-		
-	?>	
+
+	?>
+	</table>
+	<?php
+}
+
+
+function printquery_export()
+{
+	global $Corpus;
+	global $User;
+
+	if (PRIVILEGE_TYPE_CORPUS_FULL > $Corpus->access_level)
+		exiterror("You do not have permission to use this function.");
+
+
+	/* enable the user setting to be auto-selected for linebreak type */
+	$da_selected = array('d' => '', 'a' => '', 'da' => '');
+	if ($User->linefeed == 'au')
+		$User->linefeed = guess_user_linefeed($User->username);
+	$da_selected[$User->linefeed] = ' selected="selected" ';
+
+	?>
+	<table class="concordtable" width="100%">
+
+		<tr>
+			<th colspan="2" class="concordtable">Export corpus or subcorpus</th>
+		</tr>
+
+		<tr>
+			<td colspan="2" class="concordgrey">
+				<p class="spacer">&nbsp;</p>
+				<p>
+					If you &ldquo;export&rdquo; a corpus, you download a copy of the whole text of the corpus
+					(or one of your subcorpora) allowing you to analyse it offline.
+				</p>
+				<p>
+					Be warned: export downloads can be very big files!
+				</p>
+				<p class="spacer">&nbsp;</p>
+			</td>
+		</tr>
+
+		<form action="export.php" method="get">
+
+			<tr>
+				<td class="concordgeneral">
+					What do you want to export?
+				</td>
+				<td class="concordgeneral">
+					<select name="exportWhat">
+						<option selected="selected" value="~~corpus">Whole corpus</option>
+						<?php
+						$result = do_mysql_query("select * from saved_subcorpora where corpus = '{$Corpus->name}' and user = '{$User->username}' order by name");
+
+						while (false !== ($sc = Subcorpus::new_from_db_result($result)))
+							if ($sc->name != '--last_restrictions')
+								echo "\n\t\t\t\t\t\t<option value=\"sc~", $sc->id, '">', 'Subcorpus "', $sc->name, '"</option>';
+						?>
+					</select>
+				</td>
+			</tr>
+
+			<tr>
+				<td class="concordgeneral" rowspan="3">
+					Choose an export format:
+				</td>
+				<td class="concordgeneral">
+					<input type="radio" name="format" value="standard" id="format_standard" checked="checked">
+					<label for="format_standard">Standard plain text</label>
+				</td>
+			</tr>
+			<tr>
+				<td class="concordgeneral">
+					<input type="radio" name="format" value="word_annot" id="format_word_annot" >
+					<label for="format_word_annot">Word-and-tag format (joined with forward-slash)</label>
+				</td>
+			</tr>
+			<tr>
+				<td class="concordgeneral">
+					<input type="radio" name="format" value="col" id="format_col">
+					<label for="format_col">Columnar with all tags (CWB input format)</label>
+				</td>
+			</tr>
+<!-- 			<tr> -->
+<!-- 				<td class="concordgeneral"> -->
+<!-- 					<input type="radio" name="format" value="xml">XML format with all tags-->
+<!-- 				</td> -->
+<!-- 			</tr>	 -->
+
+			<tr>
+				<td class="concordgeneral">
+					Choose the operating system on which you will use the file:
+				</td>
+				<td class="concordgeneral">
+					<select name="exportLinebreak">
+						<option value="d"  <?php echo $da_selected['d']; ?>>Macintosh (OS 9 and below)</option>
+						<option value="da" <?php echo $da_selected['da'];?>>Windows</option>
+						<option value="a"  <?php echo $da_selected['a']; ?>>UNIX (incl. OS X)</option>
+					</select>
+				</td>
+			</tr>
+
+			<tr>
+				<td rowspan="2" class="concordgeneral">
+					What kind of download do you want? 
+				</td>
+				<td class="concordgeneral">
+					<input type="radio" name="downloadZip" value="0" id="downloadZip_0" checked>
+					<label for="downloadZip_0">A single text file</label>
+				</td>
+			</tr>	
+			<tr>
+				<td class="concordgeneral">
+					<input type="radio" name="downloadZip" value="1" id="downloadZip_1">
+					<label for="downloadZip_1">A zip file with separate files for each corpus text</label>
+				</td>
+			</tr>	
+
+			<tr>
+				<td class="concordgeneral">
+					Enter a name for the downloaded file:
+				</td>
+				<td class="concordgeneral">
+					<input type="text" name="exportFilename" value="<?php echo $Corpus->name; ?>-export" />
+				</td>
+			</tr>
+
+			<tr>
+				<td colspan="2" class="concordgeneral">
+					<p class="spacer">&nbsp;</p>
+					<p align="center">
+						<input type="submit" value="Click to export corpus data!" />
+					</p>
+					<p class="spacer">&nbsp;</p>
+				</td>
+			</tr>
+
+			<input type="hidden" name="uT" value="y"/>
+
+		</form>
+
 	</table>
 	<?php
 }

@@ -28,7 +28,7 @@
  */
 
 /* Very first thing: Let's work in a subdirectory so that we can use the same subdirectory references! */
-chdir('bin');
+chdir('exe');
 
 
 require('../lib/environment.inc.php');
@@ -48,8 +48,8 @@ if ($Config->homepage_use_corpus_categories)
 	$categories = list_corpus_categories();
 	
 	/* how many categories? if only one, it is either uncategorised or a single assigned cat: ergo don't use cats */
-	$n = count($categories);
-	if ($n < 2)
+	$n_words = count($categories);
+	if ($n_words < 2)
 		$Config->homepage_use_corpus_categories = false;
 }
 else
@@ -140,10 +140,11 @@ echo print_html_header('CQPweb Main Page', $Config->css_path);
 							<ul style="margin:auto">
 								<?php
 								foreach($recent_corpora as $rc)
-									echo "\t\t\t\t\t\t\t\t<li><a href=\"{$corpus_info[$rc]->corpus}/\">"
-										, escape_html($corpus_info[$rc]->title)
-										, "</a></li>\n"
-										;
+									if (isset($corpus_info[$rc]))
+										echo "\t\t\t\t\t\t\t\t<li><a href=\"{$corpus_info[$rc]->corpus}/\">"
+											, escape_html($corpus_info[$rc]->title)
+											, "</a></li>\n"
+											;
 								?>
 							</ul>
 						</td>

@@ -30,16 +30,14 @@
  * 
  */
 
-/* ------------ *
- * BEGIN SCRIPT *
- * ------------ */
-
-
 /* first, process the various "actions" that the admin interface may be asked to perform */
 require('../lib/admin-execute.inc.php');
 /* 
- * note that the execute actions are zero-environment: they call execute.inc.php 
- * which builds an environment, then calls a function, then exits. 
+ * Note that the execute actions are zero-HTML: they call execute.inc.php 
+ * which builds an environment, then calls a function, then sets a Location header, then exits. 
+ * 
+ * If there is some abort, then they fall through to here, so that no action is taken and 
+ * instead we just go back to this script's normal render of the interface. 
  */
 
 require('../lib/environment.inc.php');
@@ -54,6 +52,7 @@ require('../lib/metadata.inc.php');
 require('../lib/cache.inc.php');
 require('../lib/ceql.inc.php');
 require('../lib/cqp.inc.php');
+require('../lib/xml.inc.php');
 require('../lib/user-lib.inc.php');
 require('../lib/templates.inc.php');
 
@@ -111,6 +110,7 @@ echo print_menurow_admin('manageCorpusCategories', 'Manage corpus categories');
 echo print_menurow_admin('annotationTemplates', 'Annotation templates');
 echo print_menurow_admin('metadataTemplates', 'Metadata templates');
 echo print_menurow_admin('xmlTemplates', 'XML templates');
+echo print_menurow_admin('visualisationTemplates', 'Visualisation templates');
 
 echo print_menurow_heading('Uploads');
 echo print_menurow_admin('newUpload', 'Upload a file');
@@ -135,6 +135,7 @@ echo print_menurow_admin('dbCacheControl', 'Database cache');
 echo print_menurow_admin('restrictionCacheControl', 'Restriction cache');
 echo print_menurow_admin('subcorpusCacheControl', 'Subcorpus file cache');
 echo print_menurow_admin('freqtableCacheControl', 'Frequency table cache');
+echo print_menurow_admin('tempCacheControl', 'Temporary data');
 
 
 echo print_menurow_heading('Backend system');
@@ -150,6 +151,7 @@ echo print_menurow_heading('Usage Statistics');
 echo print_menurow_admin('corpusStatistics', 'Corpus statistics');
 echo print_menurow_admin('userStatistics', 'User statistics');
 echo print_menurow_admin('queryStatistics', 'Query statistics');
+echo print_menurow_admin('clearQueryHistory', 'Clear history');
 //echo print_menurow_admin('advancedStatistics', 'Advanced statistics');
 echo print_menurow_heading('Exit')
 ?>
@@ -228,6 +230,10 @@ case 'xmlTemplates':
 	printquery_xmltemplates();
 	break;
 	
+case 'visualisationTemplates':
+	printquery_visualisationtemplates();
+	break;
+	
 case 'newUpload':
 	printquery_newupload();
 	break;
@@ -239,7 +245,9 @@ case 'uploadArea':
 case 'userAdmin':
 	printquery_useradmin();
 	break;
-	
+
+case 'userUnverified':
+	/* fallthrough intentional */
 case 'userSearch':
 	printquery_usersearch();
 	break;
@@ -263,6 +271,10 @@ case 'groupMembership':
 
 case 'privilegeAdmin':
 	printquery_privilegeadmin();
+	break;
+
+case 'editPrivilege':
+	printquery_editprivilege();
 	break;
 
 case 'userGrants':
@@ -305,6 +317,10 @@ case 'freqtableCacheControl':
 	printquery_freqtablecachecontrol();
 	break;
 	
+case 'tempCacheControl':
+	printquery_tempcachecontrol();
+	break;
+	
 case 'manageProcesses':
 	printquery_systemprocesses();
 	break;
@@ -343,6 +359,10 @@ case 'userStatistics':
 
 case 'queryStatistics':
 	printquery_statistic('query');
+	break;
+
+case 'clearQueryHistory':
+	printquery_historyclear();
 	break;
 	
 //case 'advancedStatistics':

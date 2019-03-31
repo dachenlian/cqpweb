@@ -23,7 +23,8 @@
 
 
 
-
+// TODO at some convenient moment, rename this file to indexforms-corpusadmin.inc.php
+// cos "Corpsu Admin" gets at what it is, ie the "admin tools" option in the main menu.
 
 
 
@@ -66,13 +67,13 @@ function printquery_corpusoptions()
 	
 	<table class="concordtable" width="100%">
 		<tr>
-			<th class="concordtable">Corpus options</th>
+			<th class="concordtable">Corpus settings</th>
 		</tr>
 	</table>
 	
 	<table class="concordtable" width="100%">
 		<tr>
-			<th class="concordtable" colspan="3">Core corpus settings</th>
+			<th class="concordtable" colspan="3">Core corpus options</th>
 		</tr>
 		<form action="execute.php" method="get">
 			<tr>
@@ -316,14 +317,38 @@ function printquery_corpusoptions()
 				</td>
 		
 				<td align="center" class="concordgeneral">
+				<!-- 
 					<select name="newVisibility">
 						<?php
-						if ($Corpus->visible)
-							echo "<option value=\"1\" selected=\"selected\">Visible</option><option value=\"0\">Invisible</option>\n";
-						else
-							echo "<option value=\"1\">Visible</option><option value=\"0\" selected=\"selected\">Invisible</option>\n";
+// 						if ($Corpus->visible)
+// 							echo "<option value=\"1\" selected=\"selected\">Visible</option><option value=\"0\">Invisible</option>\n";
+// 						else
+// 							echo "<option value=\"1\">Visible</option><option value=\"0\" selected=\"selected\">Invisible</option>\n";
 						?>
 					</select>
+	 
+				-->
+					<table>
+						<tr>
+							<td class="basicbox">
+								<input type="radio" name="newVisibility" id="newVisibility1" value="1"
+									<?php echo $Corpus->visible ? ' checked="checked"' : ''; ?> />
+							</td>
+							<td class="basicbox">
+								<label for="newVisibility1">Visible</label>
+							</td>
+						</tr>
+						<tr>
+							<td class="basicbox">
+								<input type="radio" name="newVisibility" id="newVisibility0" value="0"
+									<?php echo $Corpus->visible ? '' : ' checked="checked"'; ?> />
+							</td>
+							<td class="basicbox">
+								<label for="newVisibility0">Invisible</label>
+							</td>
+						</tr>
+					</table>			
+		
 				</td>
 				
 				<td align="center" class="concordgeneral">
@@ -381,8 +406,118 @@ function printquery_corpusoptions()
 			</tr>
 			<input type="hidden" name="thisQ" value="corpusSettings" />
 			<input type="hidden" name="uT" value="y" />
-		</form>			
+		</form>
 	</table>
+	
+	<?php
+		
+	$result_variable = do_mysql_query("select * from corpus_metadata_variable where corpus = '{$Corpus->name}'");	
+	
+	?>
+
+
+<!--
+		<tr>
+			<td  class="concordgrey" >
+			
+			</td>
+			<td class="concordgeneral" align="center">
+			
+			</td>
+		</tr>
+-->
+	<table class="concordtable" width="100%">
+		<tr>
+			<th colspan="2" class="concordtable">Corpus-level metadata</th>
+		</tr>
+		<tr>
+			<td class="concordgrey" align="center" colspan="2" />
+				<p class="spacer">&nbsp;</p>
+				<p>
+					The corpus-level metadata is a set of freeform attribute/value pairs that will become
+					visible in the user interface (under &ldquo;Corpus info &gt; View corpus metadata&rdquo;).
+				</p>
+				<p class="spacer">&nbsp;</p>
+			</td>
+		</tr>
+		<!--
+		<tr>
+			<td  class="concordgrey">
+				Number of corpus-level metadata items:
+				<br>
+				(listed below)
+			</td>
+			<td class="concordgeneral" align="center">
+				<?php echo mysql_num_rows($result_variable); ?>
+			</td>
+		</tr>
+		-->
+		<tr>
+			<td class="concordgrey" align="center" width="50%">Attribute</td>
+			<td class="concordgrey" align="center">Value</td>
+		</tr>
+		<form action="../adm/index.php" method="get">
+			<tr>
+				<td class="concordgeneral" align="center">
+					<input type="text" maxlength="200" name="variableMetadataAttribute" />
+				</td>
+				<td class="concordgeneral" align="center">
+					<input type="text" maxlength="200" name="variableMetadataValue" />
+				</td>
+				<input type="hidden" name="admFunction" value="variableMetadata" />
+				<input type="hidden" name="corpus" value="<?php echo $Corpus->name; ?>" />
+			</tr>
+			<tr>
+				<td class="concordgeneral" align="center" colspan="2" />
+					&nbsp;<br/>
+					<input type="submit" value="Add a new item to the corpus metadata" />
+					<br/>&nbsp;
+				</td>
+			</tr>
+			<input type="hidden" name="uT" value="y" />
+		</form>
+		<tr>
+			<td class="concordgrey" align="center" colspan="2" />
+				<p class="spacer">&nbsp;</p>
+				<p>
+					<em>
+					
+						<?php
+					
+						echo mysql_num_rows($result_variable) != 0
+							? 'Existing items of variable corpus-level metadata (as attribute-value pairs):' 
+							: 'No items of variable corpus-level metadata have been set.'
+							;
+						?>
+
+					</em>
+				</p>
+				<p class="spacer">&nbsp;</p>
+			</td>
+		</tr>
+		<?php
+		while (false !== ($metadata = mysql_fetch_assoc($result_variable)))
+		{
+			$del_link = 'execute.php?function=delete_variable_corpus_metadata&args='
+				. urlencode("{$Corpus->name}#{$metadata['attribute']}#{$metadata['value']}")
+				. '&locationAfter=' . urlencode('index.php?thisQ=corpusSettings&uT=y') . '&uT=y';
+			?>
+			<tr>
+				<td class="concordgeneral" align="center">
+					<?php 
+						echo "Attribute [<strong>{$metadata['attribute']}</strong>] 
+								with value [<strong>{$metadata['value']}</strong>]"; 
+					?>
+				</td>
+				<td class="concordgeneral" align="center">
+					<a class="menuItem" href="<?php echo $del_link; ?>">[Delete]</a>
+				</td>
+			</tr>
+			<?php
+		}
+		?>
+	</table>
+		
 	<?php
 }
 
@@ -507,78 +642,149 @@ function printquery_manageaccess()
 }
 
 
+// TODO this func is over 500 lines long. Ri-frakking-diculous. Split it up.
+// ideas: put the different meta forms into different funcs.
 function printquery_managemeta()
 {
 	global $Config;
 	global $Corpus;
 
-	/* this is used for the top table, but also for the corpus-level metadata table (below) */
-	$result_variable = do_mysql_query("select * from corpus_metadata_variable where corpus = '{$Corpus->name}'");	
 	
 	?>
 	<table class="concordtable" width="100%">
 		<tr>
-			<th class="concordtable">Admin tools for managing corpus metadata</th>
+			<th class="concordtable">Admin tools for managing text metadata</th>
+		</tr>
+		<tr>
+			<td class="concordgrey" >
+				<p class="spacer">&nbsp;</p>
+				<p>
+					The <em>text metadata table</em> is a database within CQPweb which contains information on the texts in this corpus.
+					For every text, a number of <b>fields</b> of information are stored. The fields can be <em>classifications</em>,
+					which contain handles for categories of texts (for use in the distribution and restricted query tools); 
+					or <em>free text</em> fields, which can contain anything. 
+					Every corpus must have a text metadata table, but it can be a <em>minimalist</em> table (lists the texts with no
+					additional fields). 
+				</p> 
+				<p class="spacer">&nbsp;</p>	
+			</td>
 		</tr>
 	</table>
 	
-	<table class="concordtable" width="100%">
-		<tr>
-			<th class="concordtable" colspan="2">Metadata status summary</th>
-		</tr>
-		<tr>
-			<td  class="concordgrey">
-				Text metadata table has been loaded:
-			</td>
-			<td class="concordgeneral" align="center">
-				<?php echo text_metadata_table_exists() ? 'Yes' : 'No'; ?>
-			</td>
-		</tr>
-		<tr>
-			<td  class="concordgrey">
-				Number of corpus-level metadata items:
-				<br>
-				(listed below)
-			</td>
-			<td class="concordgeneral" align="center">
-				<?php echo mysql_num_rows($result_variable); ?>
-			</td>
-		</tr>
-<!--
-		<tr>
-			<td  class="concordgrey" >
-			
-			</td>
-			<td class="concordgeneral" align="center">
-			
-			</td>
-		</tr>
--->
-	</table>
-	
-	
-	<?php
-	
-	if (! text_metadata_table_exists())
+
+	<?php 
+	// TODO this untidily repeats the IF below.
+	// TODO put the 2yes it is set up"! and the "no it isn't" into 2 different funcs
+	// and call. one or the other from the main "manaqge text meta" func.
+	if (text_metadata_table_exists($Corpus->name))
 	{
-		/* we need to create a text metadata table for this corpus */
 		?>
+		<table class="concordtable" width="100%">
+			<tr>
+				<th class="concordtable" colspan="4">Metadata status summary</th>
+			</tr>
+			
+			<tr>
+				<td class="concordgrey" align="center" colspan="4">
+					<p class="spacer">&nbsp;</p>
+					<p>
+						The text metadata table <b>has been</b> created, and contains the fields shown below 
+						(as specified at thge time it was set up).
+					</p> 
+					<p class="spacer">&nbsp;</p>	
+					<p>If you need delete and re-load the text metadata table, you should use the control at the bottom of this page.</p> 
+					<p class="spacer">&nbsp;</p>
+				</td>
+			</tr>
+			<tr>
+				<th class="concordtable">Field handle</th>
+				<th class="concordtable">Description</th>
+				<th class="concordtable">Datatype</th>
+				<th class="concordtable">Update?</th>
+			</tr>
+			
+			<?php 
+					
+			foreach (metadata_get_array_of_metadata($Corpus->name) as $field)
+				echo "\n\t\t\t<tr>"
+ 					, "\n\t\t\t\t", '<td class="concordgeneral">', $field->handle, '</td>'
+ 					, "\n\t\t\t\t", '<td class="concordgeneral">', escape_html($field->description), '</td>'
+ 					, "\n\t\t\t\t", '<td class="concordgeneral">', $Config->metadata_type_descriptions[$field->datatype], '</td>'
+ 					, "\n\t\t\t\t", '<td class="concordgeneral">', '[TODO]', '</td>'
+ 					, "\n\t\t\t</tr>"
+ 					;
+ 			// TODO make it possible to change the dexcriptioin -- and maybe the datatype?? in the table above.
+ 			// (for now just viewing is fine)
+ 			
+ 			?>
+ 			
+		</table>
 		
 		<table class="concordtable" width="100%">
 			<tr>
-				<td class="concordgrey">
-					&nbsp;<br/>
-					The text metadata table for this corpus has not yet been set up. You must create it,
-					using the controls below, before you can search this corpus.
-					<br/>&nbsp;
+				<th colspan="2" class="concordtable">Reset the metadata table for this corpus</th>
+			</tr>
+			<tr>
+				<td colspan="2" class="concordgrey" align="center">
+					Are you sure you want to do this?
+				</td>
+			</tr>
+			<form action="metadata-admin.php" method="get">
+				<tr>
+					<td class="concordgeneral" align="center">
+						<input type="checkbox" name="clearMetadataAreYouReallySure" value="yesYesYes"/>
+						Yes, I'm really sure and I know I can't undo it.
+					</td>
+					<td class="concordgeneral" align="center">
+						<input type="submit" value="Delete metadata table for this corpus" />
+					</td>
+					<input type="hidden" name="mdAction" value="clearMetadataTable" />
+					<input type="hidden" name="corpus" value="<?php echo $Corpus->name; ?>" />
+					<input type="hidden" name="uT" value="y" />
+				</tr>
+			</form>
+		</table>
+ 		
+ 		<?php 
+	}
+	else
+	{
+		?>
+		<table class="concordtable" width="100%">
+			<tr>
+				<th class="concordtable">Metadata status summary</th>
+			</tr>			
+			<tr>
+				<td class="concordgrey" align="center">
+					<p class="spacer">&nbsp;</p>
+					<p>The text metadata table <b>has not yet been</b> created.</p> 
+					<p class="spacer">&nbsp;</p>
+					<p>
+						Please use the controls below to create the text metadata table - either by loading it from an external text file, 
+						or by duplicating data from one or more speciifed corpus XML attrributes. 
+					</p> 
+					<p>You will not be able to search the corpus until you have set up the text metadata table.</p>
+					<p class="spacer">&nbsp;</p>
 				</td>
 			</tr>
 		</table>
+
+		
+<!-- 		<table class="concordtable" width="100%"> -->
+<!-- 			<tr> -->
+<!-- 				<td class="concordgrey"> -->
+<!-- 					&nbsp;<br/> -->
+<!-- 					The text metadata table for this corpus has not yet been set up. You must create it, -->
+<!-- 					using the controls below, before you can search this corpus. -->
+<!-- 					<br/>&nbsp; -->
+<!-- 				</td> -->
+<!-- 			</tr> -->
+<!-- 		</table> -->
 		
 		<?php
 		
 		/* first, test for the "alternate" form. */
-		if (isset($_GET['createMetadataFromXml']) && $_GET['createMetadataFromXml'] == '1')
+		if (isset($_GET['createMetadataFromXml']) && '1' == $_GET['createMetadataFromXml'])
 		{
 			?>
 			
@@ -588,7 +794,7 @@ function printquery_managemeta()
 				<th class="concordtable" colspan="5" >Create metadata table from corpus XML annotations</th>
 			</tr>
 			<?php
-			$possible_xml = get_xml_all_info($Corpus->name);
+			$possible_xml = get_all_xml_info($Corpus->name);
 			/* remove the two we know cannot be used for this: */
 			unset($possible_xml['text'], $possible_xml['text_id']);
 			
@@ -606,8 +812,9 @@ function printquery_managemeta()
 			}
 			else
 			{
+				/* post form used here, because if there is a lot of XML, the URL may get too long for some servers. */
 				?>
-				<form action="metadata-admin.php" method="get">
+				<form action="metadata-admin.php" method="post">
 				
 					<tr>
 						<td class="concordgrey" colspan="5">
@@ -946,6 +1153,7 @@ function printquery_managemeta()
 			<tr>
 				<th class="concordtable" >My metadata is embedded in the XML of my corpus!</th>
 			</tr>
+			
 			<?php
 			/* check for less-than 2, because text_id always exists. */
 			if (2 > count(list_xml_with_values($Corpus->name)))
@@ -984,119 +1192,7 @@ function printquery_managemeta()
 		<?php
 	
 	}  /* endif text metadata table does not already exist */
-	else
-	{
-		/* table exists, so allow other actions */
-		
-		?>
-		<table class="concordtable" width="100%">
-			<tr>
-				<th colspan="2" class="concordtable">Reset the metadata table for this corpus</th>
-			</tr>
-			<tr>
-				<td colspan="2" class="concordgrey" align="center">
-					Are you sure you want to do this?
-				</td>
-			</tr>
-			<form action="metadata-admin.php" method="get">
-				<tr>
-					<td class="concordgeneral" align="center">
-						<input type="checkbox" name="clearMetadataAreYouReallySure" value="yesYesYes"/>
-						Yes, I'm really sure and I know I can't undo it.
-					</td>
-					<td class="concordgeneral" align="center">
-						<input type="submit" value="Delete metadata table for this corpus" />
-					</td>
-					<input type="hidden" name="mdAction" value="clearMetadataTable" />
-					<input type="hidden" name="corpus" value="<?php echo $Corpus->name; ?>" />
-					<input type="hidden" name="uT" value="y" />
-				</tr>
-			</form>
-		</table>
-		
-		<table class="concordtable" width="100%">
-			<tr>
-				<th colspan="2" class="concordtable">Corpus-level metadata</th>
-			</tr>
-			<tr>
-				<td class="concordgrey" align="center" colspan="2" />
-					<p class="spacer">&nbsp;</p>
-					<p>
-						The corpus-level metadata is a set of freeform attribute/value pairs that will become
-						visible in the user interface (under &ldquo;Corpus info &gt; View corpus metadata&rdquo;).
-					</p>
-					<p class="spacer">&nbsp;</p>
-				</td>
-			</tr>
-			<tr>
-				<td class="concordgrey" align="center" width="50%">Attribute</td>
-				<td class="concordgrey" align="center">Value</td>
-			</tr>
-			<form action="../adm/index.php" method="get">
-				<tr>
-					<td class="concordgeneral" align="center">
-						<input type="text" maxlength="200" name="variableMetadataAttribute" />
-					</td>
-					<td class="concordgeneral" align="center">
-						<input type="text" maxlength="200" name="variableMetadataValue" />
-					</td>
-					<input type="hidden" name="admFunction" value="variableMetadata" />
-					<input type="hidden" name="corpus" value="<?php echo $Corpus->name; ?>" />
-				</tr>
-				<tr>
-					<td class="concordgeneral" align="center" colspan="2" />
-						&nbsp;<br/>
-						<input type="submit" value="Add a new item to the corpus metadata" />
-						<br/>&nbsp;
-					</td>
-				</tr>
-				<input type="hidden" name="uT" value="y" />
-			</form>
-			<tr>
-				<td class="concordgrey" align="center" colspan="2" />
-					<p class="spacer">&nbsp;</p>
-					<p>
-						<em>
-						
-							<?php
-						
-							echo mysql_num_rows($result_variable) != 0
-								? 'Existing items of variable corpus-level metadata (as attribute-value pairs):' 
-								: 'No items of variable corpus-level metadata have been set.'
-								;
-							?>
-	
-						</em>
-					</p>
-					<p class="spacer">&nbsp;</p>
-				</td>
-			</tr>
-			<?php
-			while (($metadata = mysql_fetch_assoc($result_variable)) != false)
-			{
-				$del_link = 'execute.php?function=delete_variable_corpus_metadata&args='
-					. urlencode("{$Corpus->name}#{$metadata['attribute']}#{$metadata['value']}")
-					. '&locationAfter=' . urlencode('index.php?thisQ=manageMetadata&uT=y') . '&uT=y';
-				?>
-				<tr>
-					<td class="concordgeneral" align="center">
-						<?php 
-							echo "Attribute [<strong>{$metadata['attribute']}</strong>] 
-									with value [<strong>{$metadata['value']}</strong>]"; 
-						?>
-					</td>
-					<td class="concordgeneral" align="center">
-						<a class="menuItem" href="<?php echo $del_link; ?>">[Delete]</a>
-					</td>
-				</tr>
-				<?php
-			}
-			?>
-		</table>
 
-		<?php
-	
-	} /* end else (IE case where metadasta table exists) */
 }
 
 
@@ -1231,7 +1327,8 @@ function printquery_managefreqlists()
 		
 		$corpus_cqp_name_lower = strtolower($Corpus->cqp_name);
 		
-		if (file_exists("{$Config->dir->registry}/{$corpus_cqp_name_lower}__freq"))
+		
+		if (check_cwb_freq_index($Corpus->name))
 		{
 			$message = 'The text-by-text list for this corpus <strong>has already been created</strong>. Use the button below to delete and recreate it.';
 			$button_label = 'Recreate CWB frequency table';
@@ -1308,7 +1405,7 @@ function printquery_managefreqlists()
 				<td class="concordgeneral" align="center">
 					&nbsp;<br/>
 					This corpus's frequency list is publicly available across the system (for
-					keywords, etc), identified as <strong><?php echo $public_freqlist_desc;?></strong>.
+					keywords, etc.), identified as <strong><?php echo $public_freqlist_desc;?></strong>.
 					Use the button below to undo this!
 					<br/>&nbsp;<br/>
 					<form action="execute.php" method="get">
@@ -1380,7 +1477,7 @@ function printquery_managecategories()
 			?>
 			<tr>
 				<td class="concordgrey" align="center">
-					Categories in classification scheme <em><?php echo $scheme['handle'];?></em> 
+					Categories in classification scheme <em><?php echo $scheme['handle'];?></em>
 					(&ldquo;<?php echo escape_html($scheme['description']); ?>&rdquo;)
 				</td>
 			</tr>
@@ -1454,7 +1551,7 @@ function printquery_managexml()
 		$classifications = array();
 		$idlinks = array();
 		
-		foreach (get_xml_all_info($Corpus->name) as $x)
+		foreach (get_all_xml_info($Corpus->name) as $x)
 		{
 			if (METADATA_TYPE_CLASSIFICATION == $x->datatype)
 				$classifications[] = $x;
@@ -1494,6 +1591,8 @@ function printquery_managexml()
 					<input type="hidden" name="uT" value="y" />
 				</form>
 			';
+// TODO generic function(in "modal.js") for an "are you sure" overlay question which submits or does nto submit.
+			
 			
 			echo "\n\t\t<tr>"
 				, "\n\t\t\t<td class=\"concordgeneral\"><b>{$x->handle}</b></td>"
@@ -1534,7 +1633,7 @@ function printquery_managexml()
 				, '<td colspan="" class="concordgrey">No classification-type XML attributes exist.</td>'
 				, "\n\t\t\t<tr>\n"
 				;
-					
+		
 		foreach ($classifications as $x)
 		{
 			echo "\n\t\t\t<tr>\n\t\t\t\t"
@@ -1563,7 +1662,7 @@ function printquery_managexml()
 				?>
 				<tr>
 					<td class="concordgeneral" align="center">
-					<form action="metadata-admin.php" method="get">
+						<form action="metadata-admin.php" method="get">
 							<table>
 								<tr>
 									<td class="basicbox" align="center"><strong>Category handle</strong></td>
@@ -1614,52 +1713,29 @@ function printquery_managexml()
 		
 		if (empty($idlinks))
 			echo "\n\t\t\t<tr>\n\t\t\t\t"
-				, '<td colspan="" class="concordgrey">No IDlink-type XML attributes exist.</td>'
+				, '<td colspan="" class="concordgrey">No ID link-type XML attributes exist.</td>'
 				, "\n\t\t\t<tr>\n"
 				;
-					
+		
 		foreach ($idlinks as $x)
 		{
 			echo "\n\t\t\t<tr>\n\t\t\t\t"
-				, '<td colspan="2" class="concordgrey">IDlink attribute <b>', $x->handle
-				, '</b> (<em>', $x->description, '</em>), providing ID codes for XML element <b>', $x->att_family
-				, '</b></td>'
+				, '<td colspan="2" class="concordgrey"><p>IDlink attribute <b>', $x->handle
+				, '</b> (<em>', $x->description, '</em>), providing ID codes for XML element <b>', $x->att_family, '</b></p>'
+ 				, '<p class="spacer">&nbsp;</p>'
 				;
-			// TODO - one set of rows per CLASSIFICATION SCHEME, listing its categories, from xml_metadata_values; option to set descriptions.
+			/* note: the above leaves a cell unfinished, so the next if/else starts by finishing it! */
 
-			
 
-	// TODO - table to create an IDLINK table. 
-	
-	// TODO - info on the available IDLINK tables. Option to delete. (w/ are you sure)
-	
-	// TODO generic function(in "modal.js") for an "are you sure" overlay question which submits or does nto submit.
-	
-	
-	//TODO
-	//TODO
-	//TODO
-	//TODO
-	//TODO
-	//TODO This is another major TODO locus.
-	//TODO
-	//TODO
-	//TODO
-	//TODO
-	//TODO
-	//TODO
-	//TODO
-	
-	///TODO UP TO HERE
+
 			if (! xml_idlink_table_exists($Corpus->name, $x->handle))
 			{
-				echo "\n\t\t\t<tr>\n\t\t\t\t"
-					, '<td colspan="2" class="concordgeneral"><p>The IDlink metadata table does not yet exist.</p>'
-					, "</td>\n\t\t\t<tr>\n"
+				echo '<p>The IDlink metadata table for this attribute does not yet exist.</p><p class="spacer">&nbsp;</p>'
+					, "</td></tr>\n"
 					;
 				?>
 				<form action="metadata-admin.php" method="get">
-				
+		
 					<tr>
 						<th class="concordtable" colspan="5">Choose the file containing the metadata</th>
 					</tr>
@@ -1672,7 +1748,7 @@ function printquery_managexml()
 					</tr>
 		
 					<?php
-	//TODO col headers into the print uploaded file sdelector??
+	//TODO col headers into the print uploaded file selector??
 					echo print_uploaded_file_selector();
 					?>
 		
@@ -1714,7 +1790,7 @@ function printquery_managexml()
 							</table>
 						</td>
 					</tr>
-						
+					
 					<tr>
 						<td class="concordgrey" colspan="5">
 							Note: you should not specify the identifier (matches the contents of <b><?php echo $x->handle; ?></b>), 
@@ -1730,9 +1806,11 @@ function printquery_managexml()
 	
 				<?php
 				
-				//TODO might some of the above be putable-into-funcs?
+				//TODO might some of the above be put-into-funcs-able?
 				
-				echo print_embiggenable_metadata_form();
+				echo print_embiggenable_metadata_form(20); // hack for javascript bug -- new lines don't get attached to form in chrome.
+				// TODO actually fiux bug rather than  print huge table.
+// NOTE: affects  fioeldCopunt below - must match par to print_embiggenable_metadata_form
 		
 				?>
 					<tr>
@@ -1743,7 +1821,7 @@ function printquery_managexml()
 					
 				
 					<input type="hidden" name="mdAction" value="createXmlIdlinkTable" /> 
-					<input type="hidden" name="fieldCount" id="fieldCount" value="5" />
+					<input type="hidden" name="fieldCount" id="fieldCount" value="20" /> <?php /* bu g bugbug -- see above */ ?>    
 					<input type="hidden" name="corpus" value="<?php echo $Corpus->name; ?>" />
 					<input type="hidden" name="xmlAtt" value="<?php echo $x->handle; ?>" />
 					<input type="hidden" name="uT" value="y" />
@@ -1753,50 +1831,72 @@ function printquery_managexml()
 			}
 			else
 			{
-// temp code for when meta table exists.
-// proper UI needed TODO
-echo '<tr>					<td class="concordgeneral" align="center">hello<br/>';
-echo dump_mysql_result(do_mysql_query("select * from idlink_fields where corpus = '{$Corpus->name}' and att_handle = '{$x->handle}'"));
-echo dump_mysql_result(do_mysql_query("select * from idlink_values where corpus = '{$Corpus->name}' and att_handle = '{$x->handle}'"));
-echo dump_mysql_result(do_mysql_query("select * from idlink_xml_{$Corpus->name}_{$x->handle}"));
-echo '</td></tr>';
-				$junk = '?>
-				<tr>
-					<td class="concordgeneral" align="center">
-					<form action="metadata-admin.php" method="get">
-							<table>
-								<tr>
-									<td class="basicbox" align="center"><strong>Category handle</strong></td>
-									<td class="basicbox" align="center"><strong>Category description</strong></td>
-								</tr>
-								<?php
-								foreach($cats as $handle=>$desc)
-								{
-									?>
-									<tr>
-										<td class="basicbox">
-											<?php echo $x->handle, \' = \', $handle; ?>
-										</td>
-										<td class="basicbox">
-											<input type="text" name="desc-<?php echo $x->handle, '-', $handle; ?>" value="<?php echo $desc; ?>"/>
-										</td>
-									</tr>
-									<?php
-								}
-								?>
+				echo '<p>You can use form below to manipulate the interface-descriptions of its classification schemes.</p>'
+					, "<p class='spacer'>&nbsp;</p></td></tr>\n\t\t\t<tr>\n"
+					;
+				$classification_list = get_all_idlink_field_info($Corpus->name, $x->handle);
+				foreach($classification_list as $k => $v)
+					if (METADATA_TYPE_CLASSIFICATION != $v->datatype)
+						unset($classification_list[$k]);
 
-								<tr>
-									<td class="basicbox" align="center" colspan="2">
-										<input type="submit" value="Update category descriptions" />
-									</td>
-								</tr>
-							</table>
-							<input type="hidden" name="mdAction" value="updateXmlCategoryDescriptions" />
-							<input type="hidden" name="uT" value="y" />
-						</form>
-					</td>
-				</tr>
-				<?php';
+				?>
+					<tr>
+						<th class="concordtable">Insert or update category descriptions for this ID link</th>
+					</tr>
+					<?php
+
+					if (empty($classification_list))
+						echo '<tr><td class="concordgrey" align="center">&nbsp;<br/>
+							This IDlink table has no classification-type columns.
+							<br/>&nbsp;</td></tr>'
+							;
+			
+					foreach ($classification_list as $scheme)
+					{
+						?>
+						<tr>
+							<td class="concordgrey" align="center">
+								Categories in classification scheme <em><?php echo $scheme->handle;?></em>
+								(&ldquo;<?php echo escape_html($scheme->description); ?>&rdquo;)
+							</td>
+						</tr>
+						<tr>
+							<td class="concordgeneral" align="center">
+								<form action="metadata-admin.php" method="get">
+									<table>
+										<tr>
+											<td class="basicbox" align="center"><strong>Scheme = Category</strong></td>
+											<td class="basicbox" align="center"><strong>Category description</strong></td>
+										</tr>
+										<?php
+										foreach (idlink_category_listdescs($Corpus->name, $x->handle, $scheme->handle) as $handle => $description)
+											echo "\n<tr><td class=\"basicbox\">{$scheme->handle} = $handle</td>"
+												, '<td class="basicbox">'
+ 												, "<input type=\"text\" name=\"desc-{$x->handle}-{$scheme->handle}-$handle\" value=\"$description\"/>"
+												, "</td></tr>\n"
+												;
+										?>
+										<tr>
+											<td class="basicbox" align="center" colspan="2">
+												<input type="submit" value="Update category descriptions" />
+											</td>
+										</tr>
+									</table>
+									<input type="hidden" name="mdAction" value="updateXmlIdlinkCategoryDescriptions" />
+									<input type="hidden" name="uT" value="y" />
+								</form>
+							</td>
+						</tr>
+						<?php
+				}
+
+// OLD CODE for temporarily taking a gander at what is going into the database.
+// echo '<tr>					<td class="concordgeneral" align="center">hello<br/>';
+// echo dump_mysql_result(do_mysql_query("select * from idlink_fields where corpus = '{$Corpus->name}' and att_handle = '{$x->handle}'"));
+// echo dump_mysql_result(do_mysql_query("select * from idlink_values where corpus = '{$Corpus->name}' and att_handle = '{$x->handle}'"));
+// echo dump_mysql_result(do_mysql_query("select * from idlink_xml_{$Corpus->name}_{$x->handle}"));
+// echo '</td></tr>';
+
 			}
 		}
 		
@@ -1815,45 +1915,44 @@ function printquery_manageannotation()
 	global $Corpus;
 	
 	
-	// TODO move actions into corpus-admin.php? then this could be purely display.
-	if (isset($_GET['updateMe']))
-	{
-		if ( $_GET['updateMe'] == 'CEQL')
-		{
-			/* we have incoming values from the CEQL table to update */
-			$changes = array();
-			if (isset($_GET['setPrimaryAnnotation']))
-				$changes['primary_annotation'] = ($_GET['setPrimaryAnnotation'] == '~~UNSET' ? NULL : $_GET['setPrimaryAnnotation']);
-			if (isset($_GET['setSecondaryAnnotation']))
-				$changes['secondary_annotation'] = ($_GET['setSecondaryAnnotation'] == '~~UNSET' ? NULL : $_GET['setSecondaryAnnotation']);
-			if (isset($_GET['setTertiaryAnnotation']))
-				$changes['tertiary_annotation'] = ($_GET['setTertiaryAnnotation'] == '~~UNSET' ? NULL : $_GET['setTertiaryAnnotation']);
-			if (isset($_GET['setMaptable']))
-				$changes['tertiary_annotation_tablehandle'] = ($_GET['setMaptable'] == '~~UNSET' ? NULL : $_GET['setMaptable']);
-			if (isset($_GET['setComboAnnotation']))
-				$changes['combo_annotation'] = ($_GET['setComboAnnotation'] == '~~UNSET' ? NULL : $_GET['setComboAnnotation']);
+// following now moved to corpus-admin; delete in good time
+// 	if (isset($_GET['updateMe']))
+// 	{
+// 		if ( $_GET['updateMe'] == 'CEQL')
+// 		{
+// 			/* we have incoming values from the CEQL table to update */
+// 			$changes = array();
+// 			if (isset($_GET['setPrimaryAnnotation']))
+// 				$changes['primary_annotation']   = ($_GET['setPrimaryAnnotation']   == '~~UNSET' ? NULL : $_GET['setPrimaryAnnotation']);
+// 			if (isset($_GET['setSecondaryAnnotation']))
+// 				$changes['secondary_annotation'] = ($_GET['setSecondaryAnnotation'] == '~~UNSET' ? NULL : $_GET['setSecondaryAnnotation']);
+// 			if (isset($_GET['setTertiaryAnnotation']))
+// 				$changes['tertiary_annotation']  = ($_GET['setTertiaryAnnotation']  == '~~UNSET' ? NULL : $_GET['setTertiaryAnnotation']);
+// 			if (isset($_GET['setMaptable']))
+// 				$changes['tertiary_annotation_tablehandle'] = ($_GET['setMaptable'] == '~~UNSET' ? NULL : $_GET['setMaptable']);
+// 			if (isset($_GET['setComboAnnotation']))
+// 				$changes['combo_annotation']     = ($_GET['setComboAnnotation']     == '~~UNSET' ? NULL : $_GET['setComboAnnotation']);
 			
-			update_corpus_annotation_info($changes, $Corpus->name);
-		}
-		else if ($_GET['updateMe'] == 'annotation_metadata')
-		{
-			/* we have incoming annotation metadata to update */
-			if (! isset($_GET['annotationHandle']))
-				exiterror("Couldn't update $handle_to_change - not a real annotation!");
+// 			update_corpus_annotation_info($changes, $Corpus->name);
+// 		}
+// 		else if ($_GET['updateMe'] == 'annotation_metadata')
+// 		{
+// 			/* we have incoming annotation metadata to update */
+// 			if (! isset($_GET['annotationHandle']))
+// 				exiterror("Couldn't update $handle_to_change - not a real annotation!");
 			
-			update_all_annotation_info( $Corpus->name, 
-										$_GET['annotationHandle'], 
-										isset($_GET['annotationDescription']) ? $_GET['annotationDescription'] : NULL, 
-										isset($_GET['annotationTagset'])      ? $_GET['annotationTagset']      : NULL, 
-										isset($_GET['annotationURL'])         ? $_GET['annotationURL']         : NULL
-										);
-		}
-	}
-// TODO, having done the above, we need to tell the global $Corpus object to update tiself!
-// or, better, mnove these into a corpus-admin script, which then LOCATIONS to this page.
+// 			update_all_annotation_info( $Corpus->name, 
+// 										$_GET['annotationHandle'], 
+// 										isset($_GET['annotationDescription']) ? $_GET['annotationDescription'] : NULL, 
+// 										isset($_GET['annotationTagset'])      ? $_GET['annotationTagset']      : NULL, 
+// 										isset($_GET['annotationURL'])         ? $_GET['annotationURL']         : NULL
+// 										);
+// 		}
+// 	}
 
 
-	$annotation_list = get_corpus_annotations();
+
+	$annotation_list = get_corpus_annotations($Corpus->name);
 
 	/* set variables */
 	
@@ -1923,10 +2022,10 @@ function printquery_manageannotation()
 	<table class="concordtable" width="100%">
 		<tr>
 			<th colspan="2" class="concordtable">
-				Annotation setup for CEQL queries for <?php echo $Corpus->name; ?>
+				CEQL (simple query) syntax bindings for word-level annotation in <em><?php echo $Corpus->name; ?></em>
 			</th>
 		</tr>
-		<form action="index.php" method="get">
+		<form action="corpus-admin.php" method="get">
 			<tr>
 				<td class="concordgrey">
 					<b>Primary annotation</b>
@@ -1971,11 +2070,10 @@ function printquery_manageannotation()
 			<tr>
 				<td colspan="2" class="concordgeneral" align="center">
 					&nbsp;<br/>
-					<input type="submit" value="Update annotation settings"/>
+					<input type="submit" value="Update CEQL bindings"/>
 					<br/>&nbsp;
 				</td>
-			<input type="hidden" name="updateMe" value="CEQL"/>
-			<input type="hidden" name="thisQ" value="manageAnnotation"/>
+			<input type="hidden" name="caAction" value="updateCeqlBinding"/>
 			<input type="hidden" name="uT" value="y"/>
 		</form>
 	</table>
@@ -1998,34 +2096,34 @@ function printquery_manageannotation()
 		
 		$result = do_mysql_query("select * from annotation_metadata where corpus='{$Corpus->name}'");
 		if (mysql_num_rows($result) < 1)
-			echo '<tr><td colspan="5" class="concordgrey" align="center">&nbsp;<br/>This corpus has no annotation.<br/>&nbsp;</td></tr>';
+			echo '<tr><td colspan="5" class="concordgrey" align="center">'
+ 				, '&nbsp;<br/>This corpus has no annotation.<br/>&nbsp;</td></tr>'
+ 				;
 		
 		while ( false !== ($tag = mysql_fetch_object($result)) )
 		{
-			echo '<form action="index.php" method= "get"><tr>';
-			
-			echo '<td class="concordgrey"><strong>' . $tag->handle . '</strong></td>'; 
-			echo '<td class="concordgeneral" align="center">
-				<input name="annotationDescription" maxlength="230" type="text" value="'
-				. $tag->description	. '"/></td>
-				'; 
-			echo '<td class="concordgeneral" align="center">
-				<input name="annotationTagset" maxlength="230" type="text" value="'
-				. $tag->tagset	. '"/></td>
-				'; 
-			echo '<td class="concordgeneral" align="center">
-				<input name="annotationURL" maxlength="230" type="text" value="'
-				. $tag->external_url	. '"/></td>
-				';
 			?>
 			
+			<form action="corpus-admin.php" method="get">
+				<tr>
+					<td class="concordgrey">
+						<strong><?php echo $tag->handle; ?></strong>
+					</td>
+					<td class="concordgeneral" align="center">
+						<input name="annotationDescription" maxlength="230" type="text" value="<?php echo escape_html($tag->description); ?>"/>
+					</td>
+					<td class="concordgeneral" align="center">
+						<input name="annotationTagset" maxlength="230" type="text" value="<?php echo escape_html($tag->tagset); ?>" />
+					</td>
+					<td class="concordgeneral" align="center">
+						<input name="annotationURL" maxlength="230" type="text" value="<?php echo escape_html($tag->external_url); ?>" />
+					</td>
 					<td class="concordgeneral" align="center">
 						<input type="submit" value="Go!" />			
 					</td>
 				</tr>
 				<input type="hidden" name="annotationHandle" value="<?php echo $tag->handle; ?>" />
-				<input type="hidden" name="updateMe" value="annotation_metadata" />
-				<input type="hidden" name="thisQ" value="manageAnnotation" />
+				<input type="hidden" name="caAction" value="updateAnnotationInfo" />
 				<input type="hidden" name="uT" value="y" />
 			</form>
 			
@@ -2046,6 +2144,102 @@ function printquery_manageannotation()
 
 
 
+function printquery_managealignment()
+{
+	global $Corpus;
+	
+	?>
+	<table class="concordtable" width="100%">
+		<tr>
+			<th class="concordtable">
+				Manage parallel-corpus alignment
+			</th>
+		</tr>
+		<tr>
+			<td class="concordgrey">
+				Parallel corpora can be linked with alignments to other corpora on the CQPweb server.
+				Add an alignment using command-line CWB methods, then use the control below to register the
+				alignment with CQPweb.
+			</td>
+		</tr>
+	</table>
+	<table class="concordtable" width="100%">
+		<tr>
+			<th colspan="2" class="concordtable">
+				Existing alignments
+			</th>
+		<tr>
+			<th class="concordtable">
+				Target corpus
+			</th>
+			<th class="concordtable">
+				Link
+			</th>
+		</tr>
+		
+
+		<?php 
+		
+		$alx = list_corpus_alignments($Corpus->name);
+
+		if (empty($alx))
+		{
+			?>
+			
+			<tr>
+				<td colspan="2" class="concordgrey" align="center">
+					<p class="spacer">&nbsp;</p>
+					<p>This corpus has no registered alignments.</p>
+					<p class="spacer">&nbsp;</p>
+				</td>
+			</tr>
+			
+			<?php 
+		}
+		else
+			foreach($alx as $target => $desc)
+				echo "\n\t\t<tr><td class=\"concordgeneral\"><em>"
+ 					, escape_html($desc) , '</em> [', $target , '] '
+ 					, '</td><td class="concordgeneral" align="center">'
+	 				, "<a class=\"menuItem\" href=\"../$target/index.php?thisQ=manageAlignment&uT=y\">[Switch to target corpus alignments]</a>"
+ 					, "</td>\n"
+ 					;
+		?>
+	</table>
+	
+	<table class="concordtable" width="100%">
+		<tr>
+			<th class="concordtable">
+				Scan for new alignments
+			</th>
+		</tr>
+		
+		<tr>
+			<td class="concordgeneral" align="center">
+				<p class="spacer">&nbsp;</p>
+				<form action="execute.php" method="get">
+					&nbsp;<br>
+					<input type="submit" value="Click here to scan the registry for newly-added alignments" />
+					<br>
+					<input type="hidden" name="function" value="scan_for_corpus_alignments">
+					<input type="hidden" name="args" value="<?php echo $Corpus->name; ?>">
+					<input type="hidden" name="locationAfter" value="index.php?thisQ=manageAlignment&uT=y">
+					<input type="hidden" name="uT" value="y">
+					<br>&nbsp;
+				</form>
+				<p class="spacer">&nbsp;</p>
+			</td>
+		</tr> 
+	</table>
+	
+	
+	<?php
+	
+}
+
+
+
+
 function printquery_visualisation()
 {
 	global $Corpus;
@@ -2053,54 +2247,59 @@ function printquery_visualisation()
 	<table class="concordtable" width="100%">
 		<tr>
 			<th  colspan="2" class="concordtable">
-				Query result and context-view visualisation
+				Query result visualisation (concordance and extended-context displays)
 			</th>
 		</tr>
 	</table>
 	<?php
 
 	/* FIRST SECTION --- GLOSS VISUALIASATION */
-	/* process incoming */
 	
-	$annotations = get_corpus_annotations();
 	
-	if (isset($_GET['settingsUpdateGlossAnnotation']))
-	{
-		/* we overwrite the values in the global object too so that after
-		 * we update the database, the global object still matches it */
-		switch($_GET['settingsUpdateGlossShowWhere'])
-		{
-		case 'both':
-			$Corpus->visualise_gloss_in_context = true;
-			$Corpus->visualise_gloss_in_concordance = true;
-			break;
-		case 'concord':
-			$Corpus->visualise_gloss_in_context = false;
-			$Corpus->visualise_gloss_in_concordance = true;
-			break;
-		case 'context':
-			$Corpus->visualise_gloss_in_context = true;
-			$Corpus->visualise_gloss_in_concordance = false;
-			break;
-		default:
-			$Corpus->visualise_gloss_in_context = false;
-			$Corpus->visualise_gloss_in_concordance = false;
-			break;			
-		}
-		if ($_GET['settingsUpdateGlossAnnotation'] == '~~none~~')
-			$_GET['settingsUpdateGlossAnnotation'] = NULL;
-		if (array_key_exists($_GET['settingsUpdateGlossAnnotation'], $annotations) 
-				|| $_GET['settingsUpdateGlossAnnotation'] == NULL)
-		{
-			$Corpus->visualise_gloss_annotation = $_GET['settingsUpdateGlossAnnotation'];
-			update_corpus_visualisation_gloss($Corpus->visualise_gloss_in_concordance, $Corpus->visualise_gloss_in_context, 
-												$Corpus->visualise_gloss_annotation);
-		}
-		else
-			exiterror_parameter("A non-existent annotation was specified to be used for glossing.");
-	}
+// now moved into corpus admin	
+// 	/* process incoming */
+	
+// 	$annotations = get_corpus_annotations();
+	
+// 	if (isset($_GET['settingsUpdateGlossAnnotation']))
+// 	{
+// 		/* we overwrite the values in the global object too so that after
+// 		 * we update the database, the global object still matches it */
+// 		switch($_GET['settingsUpdateGlossShowWhere'])
+// 		{
+// 		case 'both':
+// 			$Corpus->visualise_gloss_in_context = true;
+// 			$Corpus->visualise_gloss_in_concordance = true;
+// 			break;
+// 		case 'concord':
+// 			$Corpus->visualise_gloss_in_context = false;
+// 			$Corpus->visualise_gloss_in_concordance = true;
+// 			break;
+// 		case 'context':
+// 			$Corpus->visualise_gloss_in_context = true;
+// 			$Corpus->visualise_gloss_in_concordance = false;
+// 			break;
+// 		default:
+// 			$Corpus->visualise_gloss_in_context = false;
+// 			$Corpus->visualise_gloss_in_concordance = false;
+// 			break;			
+// 		}
+// 		if ($_GET['settingsUpdateGlossAnnotation'] == '~~none~~')
+// 			$_GET['settingsUpdateGlossAnnotation'] = NULL;
+// 		if (array_key_exists($_GET['settingsUpdateGlossAnnotation'], $annotations) 
+// 				|| $_GET['settingsUpdateGlossAnnotation'] == NULL)
+// 		{
+// 			$Corpus->visualise_gloss_annotation = $_GET['settingsUpdateGlossAnnotation'];
+// 			update_corpus_visualisation_gloss($Corpus->visualise_gloss_in_concordance, $Corpus->visualise_gloss_in_context, 
+// 												$Corpus->visualise_gloss_annotation);
+// 		}
+// 		else
+// 			exiterror_parameter("A non-existent annotation was specified to be used for glossing.");
+// 	}
 	
 	/* set up option strings for first form  */
+
+	$annotations = get_corpus_annotations($Corpus->name);
 	
 	$opts = array(	'neither'=>'Don\'t show anywhere', 
 					'concord'=>'Concordance only', 
@@ -2147,11 +2346,11 @@ function printquery_visualisation()
 				<br/>&nbsp;
 			</td>
 		</tr>
-		<form id="formSetGlossOptions" action="index.php" method="get">
+		<form id="formSetGlossOptions" action="corpus-admin.php" method="get">
 			<tr>
 				<td class="concordgrey">Use annotation:</td>
 				<td class="concordgeneral">
-					<select name="settingsUpdateGlossAnnotation">
+					<select name="updateGlossAnnotation">
 						<?php echo $gloss_annotaton_options; ?>
 					</select>
 				</td>
@@ -2160,7 +2359,7 @@ function printquery_visualisation()
 				<!-- at some point, it might be nice to allow users to set this for themselves. -->
 				<td class="concordgrey">Show gloss in:</td>
 				<td class="concordgeneral">
-					<select name="settingsUpdateGlossShowWhere">
+					<select name="updateGlossShowWhere">
 						<?php echo $show_gloss_options; ?>
 					</select>
 				</td>
@@ -2168,7 +2367,7 @@ function printquery_visualisation()
 			<tr>
 				<td colspan="2" align="center" class="concordgeneral">
 					<input type="submit" value="Update settings" />
-					<input type="hidden" name="thisQ" value="manageVisualisation" />
+					<input type="hidden" name="caAction" value="updateGloss" />
 					<input type="hidden" name="uT" value="y" />
 				</td>
 			</tr>
@@ -2176,54 +2375,54 @@ function printquery_visualisation()
 	</table>
 	
 	<?php
-	/* SECOND SECTION --- TRANSLATION VISUALIASATION */
-	/* process incoming */
+	/* SECOND SECTION --- TRANSLATION VISUALISATION */
+// now in corpus admion
+// 	/* process incoming */
 	
-	global $Corpus;
 	
+// 	if (isset($_GET['settingsUpdateTranslateXML']))
+// 	{	
+// 		/* see note above re overwrite of global object */
+// 		switch($_GET['settingsUpdateTranslateShowWhere'])
+// 		{
+// 		case 'both':
+// 			$Corpus->visualise_translate_in_context = true;
+// 			$Corpus->visualise_translate_in_concordance = true;
+// 			break;
+// 		case 'concord':
+// 			$Corpus->visualise_translate_in_context = false;
+// 			$Corpus->visualise_translate_in_concordance = true;
+// 			break;
+// 		case 'context':
+// 			$Corpus->visualise_translate_in_context = true;
+// 			$Corpus->visualise_translate_in_concordance = false;
+// 			break;
+// 		default:
+// 			$Corpus->visualise_translate_in_context = false;
+// 			$Corpus->visualise_translate_in_concordance = false;
+// 			break;			
+// 		}
+// 		if ($_GET['settingsUpdateTranslateXML'] == '~~none~~')
+// 			$_GET['settingsUpdateTranslateXML'] = NULL;
+// 		if (array_key_exists($_GET['settingsUpdateTranslateXML'], $s_attributes) 
+// 			|| empty($_GET['settingsUpdateTranslateXML']))
+// 		{
+// 			$Corpus->visualise_translate_s_att = $_GET['settingsUpdateTranslateXML'];
+// 			update_corpus_visualisation_translate($Corpus->visualise_translate_in_concordance, $Corpus->visualise_translate_in_context, 
+// 												  $Corpus->visualise_translate_s_att);
+// 		}
+// 		else
+// 			exiterror_parameter("A non-existent s-attribute was specified to be used for translation.");
+// 	}
+	
+	/* set up option string for second form */
 	$s_attributes = list_xml_all($Corpus->name);
 	/* the descriptions will be printed more than once, so escape now. */
 	foreach ($s_attributes as &$v)
 		$v = escape_html($v);
 	
-	if (isset($_GET['settingsUpdateTranslateXML']))
-	{	
-		/* see note above re overwrite of global object */
-		switch($_GET['settingsUpdateTranslateShowWhere'])
-		{
-		case 'both':
-			$Corpus->visualise_translate_in_context = true;
-			$Corpus->visualise_translate_in_concordance = true;
-			break;
-		case 'concord':
-			$Corpus->visualise_translate_in_context = false;
-			$Corpus->visualise_translate_in_concordance = true;
-			break;
-		case 'context':
-			$Corpus->visualise_translate_in_context = true;
-			$Corpus->visualise_translate_in_concordance = false;
-			break;
-		default:
-			$Corpus->visualise_translate_in_context = false;
-			$Corpus->visualise_translate_in_concordance = false;
-			break;			
-		}
-		if ($_GET['settingsUpdateTranslateXML'] == '~~none~~')
-			$_GET['settingsUpdateTranslateXML'] = NULL;
-		if (array_key_exists($_GET['settingsUpdateTranslateXML'], $s_attributes) 
-			|| empty($_GET['settingsUpdateTranslateXML']))
-		{
-			$Corpus->visualise_translate_s_att = $_GET['settingsUpdateTranslateXML'];
-			update_corpus_visualisation_translate($Corpus->visualise_translate_in_concordance, $Corpus->visualise_translate_in_context, 
-												  $Corpus->visualise_translate_s_att);
-		}
-		else
-			exiterror_parameter("A non-existent s-attribute was specified to be used for translation.");
-	}
-	
-	/* set up option string for second form */
 
-	/* note that $opts array already exists */
+	/* note that $opts array already exists (from previous form set up) */
 	if ($Corpus->visualise_translate_in_concordance)
 		if ($Corpus->visualise_translate_in_context)
 			$show_translate_curr_opt = 'both';
@@ -2267,11 +2466,11 @@ function printquery_visualisation()
 				<br/>&nbsp;
 			</td>
 		</tr>
-		<form id="formSetTranslateOptions" action="index.php" method="get">
+		<form id="formSetTranslateOptions" action="corpus-admin.php" method="get">
 			<tr>
 				<td class="concordgrey">Select XML element/attribute to get the translation from:</td>
 				<td class="concordgeneral">
-					<select name="settingsUpdateTranslateXML">
+					<select name="updateTranslateXML">
 						<?php echo $translate_XML_options; ?>
 					</select>
 				</td>
@@ -2280,7 +2479,7 @@ function printquery_visualisation()
 				<!-- at some point, it might be nice to allow users to set this for themselves. -->
 				<td class="concordgrey">Show free translation in:</td>
 				<td class="concordgeneral">
-					<select name="settingsUpdateTranslateShowWhere">
+					<select name="updateTranslateShowWhere">
 						<?php echo $show_translate_options; ?>
 					</select>
 				</td>
@@ -2288,7 +2487,7 @@ function printquery_visualisation()
 			<tr>
 				<td colspan="2" align="center" class="concordgeneral">
 					<input type="submit" value="Update settings" />
-					<input type="hidden" name="thisQ" value="manageVisualisation" />
+					<input type="hidden" name="caAction" value="updateTranslate" />
 					<input type="hidden" name="uT" value="y" />
 				</td>
 			</tr>
@@ -2298,27 +2497,25 @@ function printquery_visualisation()
 	<?php
 
 	/* THIRD SECTION --- POSITION LABELS */
-	/* process incoming; rewrite global $Corpus object members as previously */
-	
-	/* and we can re-use $s_attributes from above */
+	/* we can again re-use $s_attributes from above */
 
-	if (isset($_GET['settingsUpdatePositionLabelAttribute']))
-	{
-		$Corpus->visualise_position_labels = true;
-		$Corpus->visualise_position_label_attribute = $_GET['settingsUpdatePositionLabelAttribute'];
+// 	if (isset($_GET['settingsUpdatePositionLabelAttribute']))
+// 	{
+// 		$Corpus->visualise_position_labels = true;
+// 		$Corpus->visualise_position_label_attribute = $_GET['settingsUpdatePositionLabelAttribute'];
 		
-		if ($Corpus->visualise_position_label_attribute == '~~none~~')
-		{
-			$Corpus->visualise_position_labels = false;
-			$Corpus->visualise_position_label_attribute = NULL;
-		}
-		else if ( ! array_key_exists($Corpus->visualise_position_label_attribute, $s_attributes) )
-		{
-			exiterror_parameter("A non-existent s-attribute was specified for position labels.");
-		}
-		/* so we know at this point that $Corpus->visualise_position_label_attribute contains an OK s-att */ 
-		update_corpus_visualisation_position_labels($Corpus->visualise_position_labels, $Corpus->visualise_position_label_attribute);
-	}
+// 		if ($Corpus->visualise_position_label_attribute == '~~none~~')
+// 		{
+// 			$Corpus->visualise_position_labels = false;
+// 			$Corpus->visualise_position_label_attribute = NULL;
+// 		}
+// 		else if ( ! array_key_exists($Corpus->visualise_position_label_attribute, $s_attributes) )
+// 		{
+// 			exiterror_parameter("A non-existent s-attribute was specified for position labels.");
+// 		}
+// 		/* so we know at this point that $Corpus->visualise_position_label_attribute contains an OK s-att */ 
+// 		update_corpus_visualisation_position_labels($Corpus->visualise_position_labels, $Corpus->visualise_position_label_attribute);
+// 	}
 	
 	$position_label_options = "\t\t\t\t\t\t<option value=\"~~none~~\""
 								. ($Corpus->visualise_position_labels ? '' : ' selected="selected"')
@@ -2332,7 +2529,7 @@ function printquery_visualisation()
 	<table class="concordtable" width="100%">
 		<tr>
 			<th  colspan="2" class="concordtable">
-				(4) Position labels
+				(3) Position labels
 			</th>
 		</tr>
 		<tr>
@@ -2346,11 +2543,11 @@ function printquery_visualisation()
 				<br/>&nbsp;
 			</td>
 		</tr>
-		<form id="formSetPositionLabelAttribute" action="index.php" method="get">
+		<form id="formSetPositionLabelAttribute" action="corpus-admin.php" method="get">
 			<tr>
 				<td class="concordgrey">Select XML element/attribute to use for position labels:</td>
 				<td class="concordgeneral">
-					<select name="settingsUpdatePositionLabelAttribute">
+					<select name="newPositionLabelAttribute">
 						<?php echo $position_label_options; ?>
 					</select>
 				</td>
@@ -2358,7 +2555,7 @@ function printquery_visualisation()
 			<tr>
 				<td colspan="2" align="center" class="concordgeneral">
 					<input type="submit" value="Update setting" />
-					<input type="hidden" name="thisQ" value="manageVisualisation" />
+					<input type="hidden" name="caAction" value="updatePositionLabelAttribute" />
 					<input type="hidden" name="uT" value="y" />
 				</td>
 			</tr>
@@ -2378,7 +2575,6 @@ function printquery_visualisation()
 	return;
 	
 	/* FOURTH SECTION --- TRANSLITERATION VISUALIASATION */
-	/* process incoming */
 
 	
 	
@@ -2387,7 +2583,7 @@ function printquery_visualisation()
 	<table class="concordtable" width="100%">
 		<tr>
 			<th  colspan="2" class="concordtable">
-				(3) Transliteration    [NOT WORKING YET!!]
+				(4) Transliteration    [NOT WORKING YET!!]
 			</th>
 		</tr>
 		<tr>
@@ -2444,51 +2640,78 @@ function printquery_visualisation()
 
 
 
-
 function printquery_xmlvisualisation()
 {
 	global $Corpus;
 	
-	/* PROCESS INCOMING */
 	
-	/* process incoming NEW or UPDATE */
-	if (isset($_GET['xmlTheElement']))
-	{
-		/* change the update form's "select" to the two-value pair of variables used in the create form... */
-		if (isset($_GET['xmlUseInSelector']))
-		{
-			$_GET['xmlUseInConc']    = ( $_GET['xmlUseInSelector'] == 'in_conc'    || $_GET['xmlUseInSelector'] == 'both' );
-			$_GET['xmlUseInContext'] = ( $_GET['xmlUseInSelector'] == 'in_context' || $_GET['xmlUseInSelector'] == 'both' );
-		}
-		xml_visualisation_create(	$Corpus->name, 
-									$_GET['xmlTheElement'], 
-									$_GET['xmlVisCode'],
-									$_GET['xmlCondAttribute'],
-									$_GET['xmlCondRegex'],
-									(bool) $_GET['xmlIsStartTag'], 
-									(bool) $_GET['xmlUseInConc'], 
-									(bool) $_GET['xmlUseInContext'] );
-	}
-	/* process incoming DELETE */
-	if (isset($_GET['xmlDeleteVisualisation']))
-		xml_visualisation_delete(	$Corpus->name, 
-									$_GET['xmlDeleteVisualisation'],
-									$_GET['xmlCondAttribute'],
-									$_GET['xmlCondRegex'] );
+	/* variable setup for "extra code file" controls */
 	
-	/* 
-	 * OK, now the processing is done, let's render the form 
-	 */
+	/* possible JavaScript extra code: all file in ../jsc, MINUS built-in */
+	$js_options = scandir('../jsc');
+	$js_builtin = get_jsc_reflection_list();
+	foreach ($js_options as $k=>$v)
+		if (in_array($v, $js_builtin) || 1 > preg_match('/^[^\.].*\.js$/i', $v))
+			unset($js_options[$k]);
+		
+	
+	/* possible CSS extra code: all files in ../css. Again, exclude built-in. */
+	$css_options = scandir('../css');
+	$css_builtin = get_css_reflection_list();
+	foreach ($css_options as $k=>$v)
+		if (in_array($v, $css_builtin) || ! preg_match('/^[^\.].*\.css$/i', $v))
+			unset($css_options[$k]);
+	
+	/* and what is currently activated? check db field. Disallow empty string which results if there are no activated files. */
+	$conc_existing_js     = preg_split('/~/', $Corpus->visualise_conc_extra_js,     -1, PREG_SPLIT_NO_EMPTY);
+	$conc_existing_css    = preg_split('/~/', $Corpus->visualise_conc_extra_css,    -1, PREG_SPLIT_NO_EMPTY);
+	$context_existing_js  = preg_split('/~/', $Corpus->visualise_context_extra_js,  -1, PREG_SPLIT_NO_EMPTY);
+	$context_existing_css = preg_split('/~/', $Corpus->visualise_context_extra_css, -1, PREG_SPLIT_NO_EMPTY);
+
+	
+	
+// moved into corpus-admin
+	
+// 	/* PROCESS INCOMING */
+	
+// 	/* process incoming NEW or UPDATE */
+// 	if (isset($_GET['xmlTheElement']))
+// 	{
+// 		/* change the update form's "select" to the two-value pair of variables used in the create form... */
+// 		if (isset($_GET['xmlUseInSelector']))
+// 		{
+// 			$_GET['xmlUseInConc']    = ( $_GET['xmlUseInSelector'] == 'in_conc'    || $_GET['xmlUseInSelector'] == 'both' );
+// 			$_GET['xmlUseInContext'] = ( $_GET['xmlUseInSelector'] == 'in_context' || $_GET['xmlUseInSelector'] == 'both' );
+// 		}
+// 		xml_visualisation_create(	$Corpus->name, 
+// 									$_GET['xmlTheElement'], 
+// 									$_GET['xmlVisCode'],
+// 									$_GET['xmlCondAttribute'],
+// 									$_GET['xmlCondRegex'],
+// 									(bool) $_GET['xmlIsStartTag'], 
+// 									(bool) $_GET['xmlUseInConc'], 
+// 									(bool) $_GET['xmlUseInContext'] );
+// 	}
+// 	/* process incoming DELETE */
+// 	if (isset($_GET['xmlDeleteVisualisation']))
+// 		xml_visualisation_delete(	$Corpus->name, 
+// 									$_GET['xmlDeleteVisualisation'],
+// 									$_GET['xmlCondAttribute'],
+// 									$_GET['xmlCondRegex'] );
+	
+// 	/* 
+// 	 * OK, now the processing is done, let's render the form 
+// 	 */
 	
 	?>
 	<table class="concordtable" width="100%">
 		<tr>
-			<th  colspan="6" class="concordtable">
+			<th class="concordtable">
 				(5) XML visualisation
 			</th>
 		</tr>
 		<tr>
-			<td  colspan="6" class="concordgrey">
+			<td class="concordgrey">
 				&nbsp;<br/>
 				XML visualisations are commands stored in the database which describe how an indexed
 				XML element (or, in CWB terms, an &ldquo;s-attribute&rdquo;) is to appear in the concordance.
@@ -2510,20 +2733,278 @@ function printquery_xmlvisualisation()
 				<br/>&nbsp;
 			</td>
 		</tr>
-		
+	</table>
+	
+	
+
+	
+	<table class="concordtable" width="100%">
+		<tr>
+			<th colspan="3" class="concordtable">Extra code files for visualisation</th>
+		</tr>
+		<tr>
+			<td colspan="3" class="concordgrey">
+				&nbsp;<br/>
+				Extra code files are specified JavaScript (.js) or Cascading Stylesheet (.css) files that will
+				be inserted into the concordance and context displays <em>in additon to</em> CQPweb's
+				normal JS/CSS files. Using extra code files allows you to apply addiitonal styling or dynamic]
+				behaviour to an XML visualisation that would not be possible through the subset of hTML
+				that can be used directlym ina  visualisation. 
+				<br/>&nbsp;<br/>
+				You can only specify an extra code file for use in concordance or context display if it actually
+				exists in the appropriate location on your server (the web-directory <code>css</code> for 
+				CSS files and <code>jsc</code> for JavaScript files).
+				<br/>&nbsp;<br/>
+				You can add as many code files as you like of either kind. If you want to use the same code file in 
+				both concordance display and context display, you must add it to the list for each separately.
+				<br/>&nbsp;
+			</td>
+		</tr>
+		<tr>
+			<th colspan="3" class="concordtable">(a) Extra code files in <u>concordance</u> display</th>
+		</tr>
+		<tr>
+			<form action="corpus-admin.php" method="get">
+				<td rowspan="2" class="concordgrey">Add an extra code file:</td>
+				<td class="concordgeneral">
+					<select name="newFile">
+						<option selected="selected" value="">
+							<?php 
+							if (empty($js_options)) 
+								echo 'No JavaScript files are available.', PHP_EOL;
+							else
+								echo 'Choose a JavaScript file to use in concordance display...</option><option>'
+	 								, implode('</option><option>', $js_options)
+	 								, PHP_EOL
+									;
+							?>
+						</option>
+					</select>
+				</td>
+				<td class="concordgeneral">
+					<input type="submit" value="Add this file">
+				</td>
+				<input type="hidden" name="caAction" value="addXmlVizConcJS" />
+				<input type="hidden" name="uT" value="y" />
+			</form>
+		</tr>
+		<tr>
+			<form action="corpus-admin.php" method="get">
+				<td class="concordgeneral">
+					<select name="newFile">
+						<option selected="selected" value="">
+							<?php 
+							if (empty($css_options)) 
+								echo 'No CSS files are available.', PHP_EOL;
+							else
+								echo 'Choose a CSS file to use in concordance display...</option><option>'
+	 								, implode('</option><option>', $css_options)
+									, PHP_EOL
+									;
+							?>
+						</option>
+					</select>
+				</td>
+				<td class="concordgeneral">
+					<input type="submit" value="Add this file">
+				</td>
+				<input type="hidden" name="caAction" value="addXmlVizConcCSS" />
+				<input type="hidden" name="uT" value="y" />
+			</form>
+		</tr>
+		<tr>
+			<td rowspan="2" class="concordgrey">Currently activated extra code files:</td>
+			<td class="concordgeneral" align="center" width="33%">
+				<b>... JavaScript files</b>
+			</td>
+			<td class="concordgeneral" align="center" width="33%">
+				<b>... CSS files</b>
+			</td>
+		</tr>
+		<tr>
+			<td class="concordgeneral" align="center">
+				<table class="basicbox">
+					<?php
+					if (empty($conc_existing_js))
+						echo '<tr><td class="basicbox">(none added)</td></tr>', PHP_EOL;
+					else
+						foreach ($conc_existing_js as $file)
+							echo '<tr>'
+ 								, '<td class="basicbox">', $file, '</td>'
+ 								, '<td class="basicbox"><a class="menuItem" href="corpus-admin.php?caAction=removeXmlVizConcJS&fileRemove='
+ 								, urlencode($file)
+ 								, '&uT=y">[x]</a></td>'
+ 								, '</tr>', PHP_EOL
+ 								;
+					?>
+				</table>
+			</td>
+			<td class="concordgeneral" align="center">
+				<table class="basicbox">
+					<?php
+					if (empty($conc_existing_css))
+						echo '<tr><td class="basicbox">(none added)</td></tr>', PHP_EOL;
+					else
+						foreach ($conc_existing_css as $file)
+							echo '<tr>'
+ 								, '<td class="basicbox">', $file, '</td>'
+ 								, '<td class="basicbox"><a class="menuItem" href="corpus-admin.php?caAction=removeXmlVizConcCSS&fileRemove='
+ 								, urlencode($file)
+ 								, '&uT=y">[x]</a></td>'
+ 								, '</tr>', PHP_EOL
+ 								;
+					?>
+				</table>
+			</td>
+		</tr>
+		<tr>
+			<th colspan="3" class="concordtable">(b) Extra code files in <u>context</u> display</th>
+		</tr>
+		<tr>
+			<form action="corpus-admin.php" method="get">
+				<td rowspan="2" class="concordgrey">Add an extra code file:</td>
+				<td class="concordgeneral">
+					<select name="newFile">
+						<option selected="selected" value="">
+							<?php 
+							if (empty($js_options)) 
+								echo 'No JavaScript files are available.', PHP_EOL;
+							else
+								echo 'Choose a JavaScript file to use in context display...</option><option>'
+	 								, implode('</option><option>', $js_options)
+	 								, PHP_EOL
+									;
+							?>
+						</option>
+					</select>
+				</td>
+				<td class="concordgeneral">
+					<input type="submit" value="Add this file">
+				</td>
+				<input type="hidden" name="caAction" value="addXmlVizContextJS" />
+				<input type="hidden" name="uT" value="y" />
+			</form>
+		</tr>
+		<tr>
+			<form action="corpus-admin.php" method="get">
+				<td class="concordgeneral">
+					<select name="newFile">
+						<option selected="selected" value="">
+							<?php 
+							if (empty($css_options)) 
+								echo 'No CSS files are available.', PHP_EOL;
+							else
+								echo 'Choose a CSS file to use in context display...</option><option>'
+	 								, implode('</option><option>', $css_options)
+									, PHP_EOL
+									;
+							?>
+						</option>
+					</select>
+				</td>
+				<td class="concordgeneral">
+					<input type="submit" value="Add this file">
+				</td>
+				<input type="hidden" name="caAction" value="addXmlVizContextCSS" />
+				<input type="hidden" name="uT" value="y" />
+			</form>
+		</tr>
+		<tr>
+			<td rowspan="2" class="concordgrey">Currently activated extra code files:</td>
+			<td class="concordgeneral" align="center" width="33%">
+				<b>... JavaScript files</b>
+			</td>
+			<td class="concordgeneral" align="center" width="33%">
+				<b>... CSS files</b>
+			</td>
+		</tr>
+		<tr>
+			<td class="concordgeneral" align="center">
+				<table class="basicbox">
+					<?php
+					if (empty($context_existing_js))
+						echo '<tr><td class="basicbox">(none added)</td></tr>', PHP_EOL;
+					else
+						foreach ($context_existing_js as $file)
+							echo '<tr>'
+ 								, '<td class="basicbox">', $file, '</td>'
+ 								, '<td class="basicbox"><a class="menuItem" href="corpus-admin.php?caAction=removeXmlVizContextJS&fileRemove='
+ 								, urlencode($file)
+ 								, '&uT=y">[x]</a></td>'
+ 								, '</tr>', PHP_EOL
+ 								;
+					?>
+				</table>
+			</td>
+			<td class="concordgeneral" align="center">
+				<table class="basicbox">
+					<?php
+					if (empty($context_existing_css))
+						echo '<tr><td class="basicbox">(none added)</td></tr>', PHP_EOL;
+					else
+						foreach ($context_existing_css as $file)
+							echo '<tr>'
+ 								, '<td class="basicbox">', $file, '</td>'
+ 								, '<td class="basicbox"><a class="menuItem" href="corpus-admin.php?caAction=removeXmlVizContextCSS&fileRemove='
+ 								, urlencode($file)
+ 								, '&uT=y">[x]</a></td>'
+ 								, '</tr>', PHP_EOL
+ 								;
+					?>
+				</table>
+			</td>
+		</tr>
+	</table>
+
+	
+	<table class="concordtable" width="100%">
+		<tr>
+			<th colspan="2" class="concordtable">
+				Visualisation fallback procedures 
+			</th>
+		</tr>
+		<tr>
+			<td class="concordgrey">
+				Do you want to add a paragraph break after punctuation tokens in context view?
+				<br>&nbsp;<br>
+				<em>
+					This is a basic fallback mechanism for breaking the corpus text into paragraphs. 
+					It is usally best to switch it <b>on</b> if you are not using an actual 
+					XML visualisation to break paragraphs in context view.
+					It is switched on by default.
+				</em>
+			</td>
+			<td class="concordgeneral" width="50%">
+				<form action="corpus-admin.php" method="get">
+					<select name="break">
+						<option value="1"<?php if ( $Corpus->visualise_break_context_on_punc) echo ' selected="selected"'; ?>>Yes</option>
+						<option value="0"<?php if (!$Corpus->visualise_break_context_on_punc) echo ' selected="selected"'; ?>>No</option>
+					</select>
+					&nbsp;
+					<input type="submit" value="Update">
+					<input type="hidden" name="caAction" value="updateBreakOnPunc">
+					<input type="hidden" name="uT" value="y">
+				</form>
+			</td>
+		</tr>
+	</table>
+	
+	
+	
+	
+	<table class="concordtable" width="100%">
 		
 		<!-- display current visualisations for this corpus -->
-		<!-- note we use the SAME FORM for updates as for creates -->
 		<tr>
 			<th colspan="6" class="concordtable">
 				Existing XML visualisation commands
 			</th>
 		</tr>
 		<tr>
+			<th class="concordtable">&nbsp;</th>
 			<th class="concordtable">Applies to ... </th>
-			<th class="concordtable">Visualisation code</th>
-			<th class="concordtable">Show</th>
-			<th class="concordtable">Used where?</th>
+			<th class="concordtable">HTML code</th>
+			<th class="concordtable">Show where?</th>
 			<th class="concordtable" colspan="2">Actions</th>
 		</tr>
 		
@@ -2531,98 +3012,155 @@ function printquery_xmlvisualisation()
 		
 		/* show each existing visualisation for this corpus */
 		
-		$where_values = array(
-			'in_conc' => "In concordance displays only",
-			'in_context' => "In extended context displays only",
-			'both' => "In concordance AND context displays",
-			'neither' => "Nowhere (visualisation disabled)"
-			);
+// 		$where_values = array(
+// 			'in_conc'    => "In concordance displays only",
+// 			'in_context' => "In extended context displays only",
+// 			'both'       => "In concordance AND context displays",
+// 			'neither'    => "Nowhere (visualisation disabled)"
+// 			);
 
-		$result = do_mysql_query("select * from xml_visualisations where corpus = '{$Corpus->name}'"); 
+		$viz_list = get_all_xml_visualisations($Corpus->name, true, true, true, true); 
 		
-		if (mysql_num_rows($result) == 0)
+		if (0 == count($viz_list))
 			echo '<tr><td colspan="6" class="concordgrey" align="center">'
 				, '&nbsp;<br/>There are currently no XML visualisations in the database.<br/>&nbsp;'
 				, "</td></tr>\n"
 				;
 		
-		while (false !== ($v = mysql_fetch_object($result)))
+		foreach ($viz_list as $v)
 		{
 			echo '
-				<form action="index.php" method="get">
+				<form action="corpus-admin.php" method="get">
 				<tr>
 				';
 			
 			list($tag, $startend) = explode('~', $v->element);
 			$startend = ($startend=='end' ? '/' : ''); 
-			$cond_regex_print = escape_html($v->cond_regex);
+			$condition_print = htmlspecialchars($v->conditional_on, ENT_COMPAT, 'UTF-8', true);
+			
+			/* note that for the condition_print, as for the textarea with the code below,
+			 * we cannot use the normal escape_html because we DO want entitites to be double-encoded
+			 * so that they appear as-typed in the interface.
+			 */
+			
+			echo '
+				<td class="concordgeneral" align="center">', $v->id, '</td>
+				';
 			
 			echo '
 				<td class="concordgeneral">&lt;' , $startend , $tag , '&gt;'
-				, (empty($v->cond_attribute) ? '' 
-					: "<br/>where <em>{$v->cond_attribute}</em> matches <em>$cond_regex_print</em>\n")  
+				, (empty($v->conditional_on) ? '' : "<br>where value matches <em>$condition_print</em>\n")  
 				, '</td>
 				';
 			
 			echo '
-				<td class="concordgeneral" align="center"><textarea cols="40" rows="2" name="xmlVisCode">' 
-				, $v->bb_code 
+				<td class="concordgeneral" align="center"><textarea cols="40" rows=3" name="xmlVizRevisedHtml">' 
+				, htmlspecialchars($v->html, ENT_COMPAT, 'UTF-8', true)
 				, '</textarea></td>
 				';
 			
-			echo '<td class="concordgeneral" align="center">'
-				, '<span onmouseover="return escape(\'' 
-				  /* note we need double-encoding to get the actual code to show up in a tooltip ! */
-				, htmlspecialchars(htmlspecialchars($v->html_code, ENT_QUOTES, 'UTF-8', true) , ENT_QUOTES, 'UTF-8', true) 
-				, '\')">[HTML]</span>'
-				, '</td>
-				';
-			
-			switch (true)
+			$in_concordance_select_no  = ' selected="selected"';
+			$in_context_select_no      = ' selected="selected"';
+			$in_download_select_no     = ' selected="selected"';
+			$in_concordance_select_yes = '';
+			$in_context_select_yes     = '';
+			$in_download_select_yes    = '';
+			if ($v->in_concordance)
 			{
-				case ( $v->in_context &&  $v->in_concordance):		$checked = 'both';			break; 
-				case (!$v->in_context && !$v->in_concordance):		$checked = 'neither';		break; 
-				case (!$v->in_context &&  $v->in_concordance):		$checked = 'in_conc';		break; 
-				case ( $v->in_context && !$v->in_concordance):		$checked = 'in_context';	break; 
+				$in_concordance_select_no  = '';
+				$in_concordance_select_yes = ' selected="selected"';
 			}
-			$options = "\n";
-			foreach ($where_values as $val=>$label)
+			if ($v->in_context)
 			{
-				$blob = ($checked == $val ? ' selected="selected"' : '');
-				$options .= "\n\t\t\t\t\t<option value=\"$val\"$blob>$label</option>\n";
+				$in_context_select_no  = '';
+				$in_context_select_yes = ' selected="selected"';
+			}
+			if ($v->in_download)
+			{
+				$in_download_select_no  = '';
+				$in_download_select_yes = ' selected="selected"';
 			}
 			
+// 			switch (true)
+// 			{
+// 			case ( $v->in_context &&  $v->in_concordance):		$checked = 'both';			break; 
+// 			case (!$v->in_context && !$v->in_concordance):		$checked = 'neither';		break; 
+// 			case (!$v->in_context &&  $v->in_concordance):		$checked = 'in_conc';		break; 
+// 			case ( $v->in_context && !$v->in_concordance):		$checked = 'in_context';	break; 
+// 			}
+// 			$options = "\n";
+// 			foreach ($where_values as $val=>$label)
+// 			{
+// 				$ch = ($checked == $val ? ' selected="selected"' : '');
+// 				$options .= "\n\t\t\t\t\t<option value=\"$val\"$ch>$label</option>\n";
+// 			}
+			
+// 			echo '
+// 				<td class="concordgeneral" align="center">
+// 				<select name="xmlVizUseInSelector">'
+// 				, $options
+// 				, '
+// 				</select>
+// 				</td>
+// 				<td class="concordgeneral" align="center">'
+// 				, '<input type="submit" value="Update" />' 
+// 				, '</td>
+// 				<td class="concordgeneral" align="center">'
+// 				, '<a class="menuItem" href="corpus-admin.php?caAction=deleteXmlViz&toDelete='
+// 				, $v->id
+// 				, '&uT=y">[Delete]</a>'
+// 				, '</td>
+// 				';
 			echo '
 				<td class="concordgeneral" align="center">
-				<select name="xmlUseInSelector">'
-				, $options
-				, '
-				</select>
+					<table>
+						<tr>
+							<td class="tightbox">In concordance?&nbsp;&nbsp;</td>
+							<td class="tightbox" align="center">
+								<select name="xmlVizUseInConc">
+									<option value="1"', $in_concordance_select_yes, '>Yes</option>
+									<option value="0"', $in_concordance_select_no , '>No </option>
+								</select>
+							</td>
+						</tr>
+						<tr>
+							<td class="tightbox">In context?&nbsp;&nbsp;</td>
+							<td class="tightbox" align="center">
+								<select name="xmlVizUseInContext">
+									<option value="1"', $in_context_select_yes, '>Yes</option>
+									<option value="0"', $in_context_select_no , '>No </option>
+								</select>
+							</td>
+						</tr>
+						<tr>
+							<td class="tightbox">In query download?&nbsp;&nbsp;</td>
+							<td class="tightbox" align="center">
+								<select name="xmlVizUseInDownload">
+									<option value="1"', $in_download_select_yes, '>Yes</option>
+									<option value="0"', $in_download_select_no , '>No </option>
+								</select>
+							</td>
+						</tr>
+					</table>
+						
+							
 				</td>
-				';
-
-			echo '
+				
 				<td class="concordgeneral" align="center">'
 				, '<input type="submit" value="Update" />' 
-				, '</td>';
-						
-			echo '
+				, '</td>
 				<td class="concordgeneral" align="center">'
-				, '<a class="menuItem" href="index.php?thisQ=manageVisualisation&xmlDeleteVisualisation='
-				, $tag , ($startend=='/' ? '~end' : '~start')
-				, '&xmlCondAttribute=' , $v->cond_attribute
-				, '&xmlCondRegex=' , urlencode($v->cond_regex)
+				, '<a class="menuItem" href="corpus-admin.php?caAction=deleteXmlViz&toDelete='
+				, $v->id
 				, '&uT=y">[Delete]</a>'
 				, '</td>
 				';
-						
+			
+			
 			echo '
 				</tr>
-				<input type="hidden" name="xmlTheElement" value="' , $tag , '" />
-				<input type="hidden" name="xmlIsStartTag" value="' , ($startend=='/' ? '0' : '1') , '" />
-				<input type="hidden" name="xmlCondAttribute" value="' , $v->cond_attribute , '" />
-				<input type="hidden" name="xmlCondRegex" value="' , $v->cond_regex , '" />
-				<input type="hidden" name="thisQ" value="manageVisualisation" />
+				<input type="hidden" name="vizToUpdate" value="' , $v->id , '" />
+				<input type="hidden" name="caAction" value="updateXmlViz" />
 				<input type="hidden" name="uT" value="y" />
 				</form>
 				';
@@ -2634,7 +3172,7 @@ function printquery_xmlvisualisation()
 	
 	<table class="concordtable" width="100%">		
 		<!-- form to create new visualisation -->
-		<form action="index.php" method="get">
+		<form action="corpus-admin.php" method="get">
 			<tr>
 				<th colspan="2" class="concordtable">
 					Create new XML visualisation command
@@ -2646,11 +3184,11 @@ function printquery_xmlvisualisation()
 					Select one of the available XML elements:
 				</td>
 				<td class="concordgeneral">
-					<select name="xmlTheElement">
+					<select name="xmlVizElement">
 					
 						<?php
-						foreach (list_xml_all() as $x=>$x_desc)
-							echo "<option>$x</option>\n\t\t\t\t\t\t";
+						foreach (list_xml_all($Corpus->name) as $x=>$x_desc)
+							echo "<option value=\"$x\">$x : ", escape_html($x_desc), "</option>\n\t\t\t\t\t\t";
 						?>
 						
 					</select>					
@@ -2659,55 +3197,72 @@ function printquery_xmlvisualisation()
 			<tr>
 				<td class="concordgrey">Create visualisation for start or end tag?</td>
 				<td class="concordgeneral">
-					<input type="radio" checked="checked" name="xmlIsStartTag" value="1" /> Start tag
-					<input type="radio" name="xmlIsStartTag" value="0" /> End tag
+					<input type="radio" id="xmlVizIsStartTag_1" name="xmlVizIsStartTag" value="1" checked="checked" /> 
+					<label for="xmlVizIsStartTag_1">Start tag</label>
+					<input type="radio" id="xmlVizIsStartTag_0" name="xmlVizIsStartTag" value="0" /> 
+					<label for="xmlVizIsStartTag_0">End tag</label>
 				</td>
 			</tr>
 			<tr>
 				<td align="center" colspan="2" class="concordgrey">
-					<em>Note: if you choose an element start/end for which a visualisation 
-					already exists, the existing visualisation will be overwritten UNLESS 
-					there are different conditions.</em>
+					<em>
+						Note: if you choose an element start/end for which a visualisation 
+						already exists, the existing visualisation will NOT be deleted.  
+						<br>
+						Only one visualisation ever has effect for a given start/end tag.
+						You can have different visualisations of the same tag in context/concordance.
+					</em>
 				</td>
 			</tr>
 			<tr>
 				<td class="concordgrey">
-					Enter the code for the visualisation you want to create.
+					Enter the code (text + restricted HTML) for the visualisation you want to create.
 					<br/>&nbsp;<br/>
-					See <a target="_blank" href="../doc/CQPweb-visualisation-manual.html">this file</a> for more
-					information.
+					(See the chapter on visualisation in the 
+					<a target="_blank" href="../doc/CQPwebAdminManual.pdf">CQPweb System Administrator's Manual</a>
+					 for more information.)
 				</td>
 				<td class="concordgeneral">
-					<textarea cols="40" rows="12" name="xmlVisCode"></textarea>
+					<textarea cols="50" rows="3" name="xmlVizHtml"></textarea>
 				</td>
 			</tr>		
 			<tr>
 				<td class="concordgrey">Use this visualisation in concordances?</td>
 				<td class="concordgeneral">
-					<input type="radio" checked="checked" name="xmlUseInConc" value="1" /> Yes
-					<input type="radio" name="xmlUseInConc" value="0" /> No
+					<input type="radio" id="xmlVizUseInConc_1" name="xmlVizUseInConc" value="1" checked="checked" />
+					<label for="xmlVizUseInConc_1">Yes</label>
+					<input type="radio" id="xmlVizUseInConc_0" name="xmlVizUseInConc" value="0" />
+					<label for="xmlVizUseInConc_0">No</label>
 				</td>
 			</tr>
 			<tr>
 				<td class="concordgrey">Use this visualisation in extended context display?</td>
 				<td class="concordgeneral">
-					<input type="radio" checked="checked" name="xmlUseInContext" value="1" /> Yes
-					<input type="radio" name="xmlUseInContext" value="0" /> No
+					<input type="radio" id="xmlVizUseInContext_1" name="xmlVizUseInContext" value="1" checked="checked" />
+					<label for="xmlVizUseInContext_1">Yes</label>
+					<input type="radio" id="xmlVizUseInContext_0" name="xmlVizUseInContext" value="0" />
+					<label for="xmlVizUseInContext_0">No</label>
+				</td>
+			</tr>
+			<tr>
+				<td class="concordgrey">Use this visualisation in downloaded query results (plaintext format)?</td>
+				<td class="concordgeneral">
+					<input type="radio" id="xmlVizUseInDownload_1" name="xmlVizUseInDownload" value="1" />
+					<label for="xmlVizUseInDownload_1">Yes</label>
+					<input type="radio" id="xmlVizUseInDownload_0" name="xmlVizUseInDownload" value="0" checked="checked" />
+					<label for="xmlVizUseInDownload_0">No</label>
 				</td>
 			</tr>
 			<tr>
 				<td class="concordgrey">
 					Specify a condition?
 					<br/>&nbsp;<br/>
-					<em>(Leave blank for an unconditional visualisation.)</em></td>
+					<em>(Only possible for start tags. Leave blank for an unconditional visualisation.)</em>
+				</td>
 				<td class="concordgeneral">
-					The attribute 
-					<input type="text" name="xmlCondAttribute" />
-					must have a value which contains
-					<br/> 
-					a match for the regular expression
-					<input type="text" name="xmlCondRegex" />
-					.
+					The value of the XML attribute must match this regular expression:
+					<br>
+					<input type="text" size="100" maxlength="800" name="xmlVizCondition" />
 				</td>
 			</tr>
 			<tr>
@@ -2717,15 +3272,548 @@ function printquery_xmlvisualisation()
 				</td>
 			</tr>
 			
-			<input type="hidden" name="thisQ" value="manageVisualisation" />
+			<input type="hidden" name="caAction" value="createXmlViz" />
 			<input type="hidden" name="uT" value="y" />
 			
 		</form>
 	</table>
 	
+	<table class="concordtable" width="100%">		
+		<tr>
+			<th colspan="5" class="concordtable">
+				Import visualisation from template
+			</th>
+		</tr>
+		<tr>
+			<td colspan="5" class="concordgrey">
+				&nbsp;<br/>
+				Templates are visualisations from other corpora that you have flagged to be generally available
+				on this system. The currently available templates are listed below.
+				<br/>&nbsp;<br/>
+				<a href="../adm/index.php?thisF=visualisationTemplates&uT=y">Click here to manage visualisation templates.</a>
+				<br/>&nbsp;<br/>
+				If you import a template, an identical visualisation will be created in this corpus.
+				<br/>&nbsp;
+			</td>
+		</tr>
+		
+		<tr>
+			<th class="concordtable" colspan="5">
+				Available visualisation templates
+			</th>
+		</tr>
+		<tr>
+			<th class="concordtable">
+				Original corpus
+			</th>
+			<th class="concordtable">
+				Applies to...
+			</th>
+			<th class="concordtable" >
+				HTML code
+			</th>
+			<th class="concordtable">
+				Show where?
+			</th>
+			<th class="concordtable">
+				Import here
+			</th>
+		</tr>
+		
+		<?php
+		$templates_printed = 0;
+
+		$template_list = get_global_xml_visualisations(true);
+
+		foreach($template_list as $t)
+		{
+// 			if ($t->corpus == $Corpus->name)
+// 				continue;
+// 			else 
+				++$templates_printed;
+			
+			list($tag, $startend) = explode('~', $t->element);
+			$startend = ($startend=='end' ? '/' : ''); 
+			$condition_print = htmlspecialchars($t->conditional_on, ENT_COMPAT, 'UTF-8', true);
+
+			echo "\n\t\t<tr>\n\n"
+ 				, '<td class="concordgeneral">', $t->corpus, '</td>'
+ 				, '<td class="concordgeneral">&lt;' , $startend , $tag , '&gt;'
+				, (empty($t->conditional_on) ? '' : "<br>where value matches <em>$condition_print</em>\n")  
+				, '</td>'
+ 				, '<td class="concordgeneral"><pre>', htmlspecialchars($t->html, ENT_COMPAT, 'UTF-8', true), '</pre></td>'
+	 			, '<td class="concordgeneral">'
+				, 'In concordance? &ndash; <b>', ($t->in_concordance?'Yes':'No'), '</b><br/>'
+				, 'In context?     &ndash; <b>', ($t->in_context    ?'Yes':'No'), '</b><br/>'
+				, 'In download?    &ndash; <b>', ($t->in_download   ?'Yes':'No'), '</b>'
+				, '</td>'
+				, '<form action="corpus-admin.php" method="GET">'
+				, '<td class="concordgeneral" align="center"><input type="submit" value="Import!"/></td>'
+				, '	<input type="hidden" name="caAction" value="importXmlViz" />'
+				, '<input type="hidden" name="templateViz" value="', $t->id, '" />'
+				, '<input type="hidden" name="uT" value="y" /></form>'
+				, "\n\n\t\t</tr>\n"
+ 				;
+		}
+		if (1 > $templates_printed)
+		{
+			?>
+			<tr>
+				<td class="concordgrey" colspan="5">
+					<p class="spacer">&nbsp;</p>
+					<p>None of your XML visualisations are currently enabled to act as templates. 
+					<p class="spacer">&nbsp;</p>
+				</td>		
+			</tr>
+			<?php 
+		}
+		
+		?>
+		
+	</table>
 	
 	<?php	
 }
+
+
+
+function printquery_addtocorpus()
+{
+	global $Corpus;
+	
+	/* links to 3 sorts of add */
+	$plink = '<a href="index.php?thisQ=addToCorpus&addWhat=p&uT=y" class="menuItem">[Add p-attribute data]</a>';
+	$slink = '<a href="index.php?thisQ=addToCorpus&addWhat=s&uT=y" class="menuItem">[Add s-attribute data]</a>';
+	$mlink = '<a href="index.php?thisQ=addToCorpus&addWhat=m&uT=y" class="menuItem">[Add metadata field]</a>';
+	
+		
+	switch(isset($_GET['addWhat']) ? $_GET['addWhat'] : false)
+	{
+	case 'm':
+		$mlink = '<a class="menuCurrentItem">Add metadata field</a>';
+		break;
+	case 's':
+		$slink = '<a class="menuCurrentItem">Add s-attribute data</a>';
+		break;
+	case 'p':
+		$plink = '<a class="menuCurrentItem">Add p-attribute data</a>';
+		break;
+	}
+	
+	
+	?>
+	<table class="concordtable" width="100%">
+		<tr>
+			<th colspan="3" class="concordtable">
+				Add data to corpus <?php echo $Corpus->name;?>
+			</th>
+		</tr>
+		<tr>
+			<td class="concordgrey" width="33.3%" align="center">
+				&nbsp;<br>
+				<?php echo $plink ; ?>
+				<br>&nbsp;
+			</td>
+			<td class="concordgrey" width="33.3%" align="center">
+				&nbsp;<br>
+				<?php echo $slink ; ?>
+				<br>&nbsp;
+			</td>
+			<td class="concordgrey" width="33.3%" align="center">
+				&nbsp;<br>
+				<?php echo $mlink ; ?>
+				<br>&nbsp;
+			</td>
+		</tr>
+	</table>
+	
+	<?php
+	
+	switch(isset($_GET['addWhat']) ? $_GET['addWhat'] : false)
+	{
+	case 'm':
+		printquery_addtocorpus_metadata();
+		break;
+	case 's':
+		printquery_addtocorpus_s();
+		break;
+	case 'p':
+		printquery_addtocorpus_p();
+		break;
+	}
+	
+}
+
+
+function printquery_addtocorpus_p()
+{
+	global $Corpus;
+	
+	?>
+	
+	<form action="corpus-admin.php" method="get">
+	<input type="hidden" name="caAction" value="extraPatt">
+	
+	<table class="concordtable" width="100%">
+		<tr>
+			<th class="concordtable">
+				Add a new p-attribute (word-level annotation)
+				<br>
+				NOT COMPLETE YET!!!!!!!!!!!
+			</th>
+		</tr>
+		<tr>
+			<td colspan="2" class="concordgrey">
+				Explanation here
+			</td>
+		</tr>
+
+
+
+
+
+
+	
+		<?php
+		
+		if ($Corpus->cwb_external)
+		{
+			?>
+			
+		<tr>
+			<td colspan="2" class="concorderror">
+				Warning: this corpus was indexed externally and then imported into CWB.
+				<br>&nbsp;<br>
+				Adding new corpus data will only work if the web server has write-access
+				to the data location of the CWB index files.
+			</td>
+		</tr>			
+			
+			
+			<?php
+		}
+		
+		?>
+
+
+
+
+
+
+
+		
+
+	</table>
+	
+	<input type="hidden" name="uT" value="y">
+	</form>
+
+	
+		
+	<form action="execute.php" method="get">
+		<table class="concordtable" width="100%">
+			<tr>
+				<th class="concordtable">Scan for new p-attributes added offline</th>
+			</tr>
+			<tr>
+				<td class="concordgeneral" align="center">
+					<p class="spacer">&nbsp;</p>
+					&nbsp;<br>
+					<input type="submit" value="Click here to scan the registry for newly-added p-attributes" />
+					<br>
+					<input type="hidden" name="function" value="scan_for_new_corpus_attributes">
+					<input type="hidden" name="args" value="<?php echo $Corpus->name, '#p'; ?>">
+					<input type="hidden" name="locationAfter" value="index.php?thisQ=manageAnnotation&uT=y">
+					<input type="hidden" name="uT" value="y">
+					<br>&nbsp;
+					<p class="spacer">&nbsp;</p>
+				</td>
+			</tr> 
+		</table>
+	</form>
+	
+	
+	<?php
+	
+	coming_soon_finish_page();
+	
+}
+
+
+function printquery_addtocorpus_s()
+{
+	global $Corpus;
+
+	/* create options for adding an annotation to an existing element */
+	$existing_options = '';
+	foreach(list_xml_elements($Corpus->name) as $handle => $desc)
+		$existing_options .= "\n\t\t\t\t\t<option value=\"value~" . $handle 
+			. '">A new set of data values for existing element &ldquo;' . $handle
+			. '&rdquo; (' . escape_html($desc) . ')</option>'
+ 			;
+	
+	?>
+	
+	<form action="corpus-admin.php" method="get">
+	<input type="hidden" name="caAction" value="extraSatt">
+	
+	<table class="concordtable" width="100%">
+		<tr>
+			<th colspan="5" class="concordtable">
+				Add a new s-attribute (XML element/attribute)
+			</th>
+		</tr>
+		<tr>
+			<td colspan="5" class="concordgrey">
+				<p class="spacer">&nbsp;</p>
+				<p>
+					A new s-attribute can be imported from a tab-delimited plain text file.
+					When creating a new XML element, the file should contain a sorted sequence of
+					corpus positions (begin/end pairs), with the start point in column one, and the 
+					end point in column two. When adding a new annotation to an existing XML element,
+					the corpus positions must be the same as those in the existing s-attribute,
+					with an additional third column containing the values of the new annotation.
+				</p>
+				<p class="spacer">&nbsp;</p>				
+			</td>
+		</tr>
+		
+		<tr>
+			<td colspan="3" class="concordgrey">
+				Please enter a name for your new s-attribute: 
+			</td>
+			<td colspan="2" class="concordgeneral">
+				<input type="text" name="newAttHandle" onKeyUp="check_c_word(this)" >
+			</td>
+		</tr>
+		
+		<tr>
+			<td colspan="3" class="concordgrey">
+				Please enter a description for your new s-attribute: 
+			</td>
+			<td colspan="2" class="concordgeneral">
+				<input type="text" name="newAttDesc">
+			</td>
+		</tr>
+		
+		<tr>
+			<td colspan="3" class="concordgrey">
+				What kind of s-attribute do you wish to add?
+			</td>
+			<td colspan="2" class="concordgeneral">
+				<select name="addType">
+					<option value="~newRanges">A new set of corpus regions (i.e. a new XML element)</option>
+					<?php echo $existing_options; ?>
+				</select>
+			</td>
+		</tr>
+	
+		<tr>
+			<td colspan="3" class="concordgrey">
+				Select a datatype for the s-attribute:
+				<br>
+				<em>(only applies for new data values for existing XML elements)</em>
+			</td>
+			<td colspan="2" class="concordgeneral">
+				<select name="datatype">
+					<option value="<?php echo METADATA_TYPE_FREETEXT;       ?>" selected="selected">Free text</option>
+					<option value="<?php echo METADATA_TYPE_CLASSIFICATION; ?>">Classification</option>
+					<option value="<?php echo METADATA_TYPE_IDLINK;         ?>">ID link</option>
+					<option value="<?php echo METADATA_TYPE_UNIQUE_ID;      ?>">Unique ID</option>
+					<!-- TODO use the values in $Config->metadata_type_descriptions once we allow DATE too. -->
+				</select>
+			</td>
+		</tr>
+	
+		<?php
+		
+		if ($Corpus->cwb_external)
+		{
+			?>
+			
+			<tr>
+				<td colspan="2" class="concorderror">
+					Warning: this corpus was indexed externally and then imported into CWB.
+					<br>&nbsp;<br>
+					Adding new corpus data will only work if the web server has write-access
+					to the data location of the CWB index files.
+				</td>
+			</tr>			
+			
+			<?php
+		}
+		
+		?>
+
+		<tr>
+			<th class="concordtable" colspan="5">Choose the file containing the data of the new S-attribute</th>
+		</tr>
+
+		<tr>
+			<th class="concordtable">Use?</th>
+			<th colspan="2" class="concordtable">Filename</th>
+			<th class="concordtable">Size (K)</th>
+			<th class="concordtable">Date modified</th>
+		</tr>
+
+		<?php
+		echo print_uploaded_file_selector();
+		?>
+
+		<tr>
+			<td align="center" class="concordgeneral" colspan="5">
+				<input type="submit" value="Add new s-attribute using the settings above">
+			</td>
+		</tr>
+	</table>
+	
+	<input type="hidden" name="uT" value="y">
+	</form>
+
+	
+	<form action="execute.php" method="get">
+		<table class="concordtable" width="100%">
+			<tr>
+				<th class="concordtable">Scan for new s-attributes added offline</th>
+			</tr>
+			<tr>
+				<td class="concordgeneral" align="center">
+					<p class="spacer">&nbsp;</p>
+					&nbsp;<br>
+					<input type="submit" value="Click here to scan the registry for newly-added s-attributes" />
+					<br>
+					<input type="hidden" name="function" value="scan_for_new_corpus_attributes">
+					<input type="hidden" name="args" value="<?php echo $Corpus->name, '#s'; ?>">
+					<input type="hidden" name="locationAfter" value="index.php?thisQ=manageXml&uT=y">
+					<input type="hidden" name="uT" value="y">
+					<br>&nbsp;
+					<p class="spacer">&nbsp;</p>
+				</td>
+			</tr> 
+		</table>
+	</form>
+	
+	
+	
+	<?php
+	
+}
+
+function printquery_addtocorpus_metadata()
+{
+	global $Config;
+	global $Corpus;
+	
+	/* The option for text metadata is hardcoded: the idlinks are generated here. */
+	$idlink_options = '';
+	foreach(get_all_xml_info($Corpus->name) as $x)
+		if (METADATA_TYPE_IDLINK == $x->datatype)
+			$idlink_options .= "\n\t\t\t\t\t<option value=\"" . $x->handle 
+				. '">New metadata field for XML ID-link attribute &ldquo;' . $x->handle
+				. '&rdquo; (' . escape_html($x->description) . ')</option>'
+	 			;
+
+	// the following bodge is copied from the embiggenable-meadata form code.
+	$types_enabled = array(METADATA_TYPE_CLASSIFICATION, METADATA_TYPE_FREETEXT/*, METADATA_TYPE_UNIQUE_ID, METADATA_TYPE_DATE*/);
+				/*note that we unique ID and DATE are temporarily disabled; will be reinserted later. */
+	$datatype_options = '';
+	foreach ($Config->metadata_type_descriptions as $value => $desc)
+		if (in_array($value, $types_enabled))
+			$datatype_options .= '<option value="' . $value . ($value == METADATA_TYPE_CLASSIFICATION ? '" selected="selected">' : '">') . $desc . '</option>';
+
+	 			
+	?>
+	
+	<form action="corpus-admin.php" method="get">
+	<input type="hidden" name="caAction" value="extraMeta"> 
+	
+	<table class="concordtable" width="100%">
+		<tr>
+			<th colspan="5" class="concordtable">
+				Add new metadata to the corpus
+			</th>
+		</tr>
+		<tr>
+			<td colspan="5" class="concordgrey">
+				<p class="spacer">&nbsp;</p>
+				<p>
+					New metadata for texts or for XML attributes of type ID link 
+					can be added from a tab-delimited plain text file.
+					The first column should contain the ID code of the text (or other entity).
+					The second column should contain the value of the new metadata field for that ID.
+				<p class="spacer">&nbsp;</p>
+			</td>
+		</tr>
+		
+		<tr>
+			<td colspan="3" class="concordgrey">
+				Please enter a name for the new metadata field: 
+			</td>
+			<td colspan="2" class="concordgeneral">
+				<input type="text" name="newFieldHandle" onKeyUp="check_c_word(this)" >
+			</td>
+		</tr>
+		
+		<tr>
+			<td colspan="3" class="concordgrey">
+				Please enter a description for the new metadata field: 
+			</td>
+			<td colspan="2" class="concordgeneral">
+				<input type="text" name="newFieldDesc">
+			</td>
+		</tr>
+		
+		<tr>
+			<td colspan="3" class="concordgrey">
+				What kind of metadata do you wish to add?
+			</td>
+			<td colspan="2" class="concordgeneral">
+				<select name="target">
+					<option value="--t" selected="selected">Text metadata</option>
+					<?php echo $idlink_options; ?>
+				</select>
+			</td>
+		</tr>
+	
+		<tr>
+			<td colspan="3" class="concordgrey">
+				Select the datatype of the new metadata field:
+			</td>
+			<td colspan="2" class="concordgeneral">
+				<select name="datatype">
+					<?php echo $datatype_options; ?>
+				</select>
+			</td>
+		</tr>
+	
+		
+		<tr>
+			<th class="concordtable" colspan="5">Choose the file containing the data for the new metadata field</th>
+		</tr>
+		
+	
+		<?php
+		echo print_uploaded_file_selector();
+		?>
+
+		<tr>
+			<td align="center" class="concordgeneral" colspan="5">
+				<input type="submit" value="Add new metadata field using the settings above">
+			</td>
+		</tr>
+	</table>
+	
+	
+	<input type="hidden" name="uT" value="y">
+	</form>
+	
+	<?php
+	
+}
+
+
+
+
 
 
 
@@ -2871,7 +3959,7 @@ function printquery_showfreqtables()
 			<th class="concordtable">User</th>
 			<th class="concordtable">Size (bytes)</th>
 			<th class="concordtable">Corpus section</th>
-			<th class="concordtable">Created</th>
+			<th class="concordtable">Last used</th>
 			<th class="concordtable">Public?</th>
 			<th class="concordtable">Delete</th>
 		</tr>
@@ -3000,7 +4088,7 @@ function printquery_showdbs()
 	list($size) = mysql_fetch_row(do_mysql_query("select sum(db_size) from saved_dbs"));
 	if (!isset($size))
 		$size = 0;
-	$percent = round(((float)$size / (float)$Config->mysql_db_size_limit) * 100.0, 2);
+	$percent = round(((float)$size / (float)$Config->db_cache_size_limit) * 100.0, 2);
 	
 	$subc_mapper = get_subcorpus_name_mapper($Corpus->name);
 	
@@ -3032,7 +4120,7 @@ function printquery_showdbs()
 
 	echo '<th width="50%" class="concordtable">'
 		, '<a onmouseover="return escape(\'This function affects <b>all</b> corpora in the CQPweb database\')"'
-		, 'href="execute.php?function=delete_saved_dbs&locationAfter='
+		, 'href="execute.php?function=delete_db_overflow&locationAfter='
 		, $return_to_url
 		, '&uT=y">Delete DB cache overflow</a></th>'
  		;
@@ -3061,7 +4149,7 @@ function printquery_showdbs()
 			<th class="concordtable">DB size</th>
 			<th class="concordtable">Matching query...</th>
 			<th class="concordtable">Restrictions/Subcorpus</th>
-			<th class="concordtable">Created</th>
+			<th class="concordtable">Last used</th>
 			<th class="concordtable">Delete</th>	
 		</tr>
 

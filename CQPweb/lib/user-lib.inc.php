@@ -30,14 +30,34 @@
  * ==============
  */
 
-
+/**
+ * Converts a string username to an integer. If the argument is not
+ * the name of a user account that exists, the program aborts.
+ * 
+ * @param  string $user  Username.
+ * @return int           User ID number.
+ */
 function user_name_to_id($user)
 {
+	/* a VERY common use pattern will be for this function to be called again and again
+	 * on the the same username (the logged in user - which will be the first username
+	 * checked). So let's optimise for that case. */
+	static $cached_user = NULL;
+	static $cached_id = NULL;
+	if (!is_null($cached_user))
+		if ($user == $cached_user)
+			return $cached_id;
+	
 	$user = mysql_real_escape_string($user);
 	$result = do_mysql_query("select id from user_info where username = '$user'");
 	if (mysql_num_rows($result) < 1)
-		exiterror_general("Invalid user name specified at database level: $user");
+		exiterror("Invalid user name specified at database level: $user");
 	list($id) = mysql_fetch_row($result);
+	if (is_null($cached_user))
+	{
+		$cached_user = $user;
+		$cached_id = $id;
+	}
 	return $id;
 }
 
@@ -46,7 +66,7 @@ function user_id_to_name($id)
 	$id = (int)$id;
 	$result = do_mysql_query("select username from user_info where id = $id");
 	if (mysql_num_rows($result) < 1)
-		exiterror_general("Invalid user ID specified at database level: $id");
+		exiterror("Invalid user ID specified at database level: $id");
 	list($name) = mysql_fetch_row($result);
 	return $name;
 }
@@ -80,7 +100,7 @@ function add_new_user($username, $password, $email, $initial_status = USER_STATU
 	$passhash = generate_new_hash_from_password($password);
 
 
-	$sql_query = "INSERT INTO user_info (
+	$sql = "INSERT INTO user_info (
 		username,
 		realname,
 		email,
@@ -127,7 +147,7 @@ function add_new_user($username, $password, $email, $initial_status = USER_STATU
 		)"
 		;
 		
-	do_mysql_query($sql_query);
+	do_mysql_query($sql);
 	
 	/* check for automatic group ownership */
 	
@@ -164,7 +184,7 @@ function add_batch_of_users($username_root, $number_in_batch, $password, $autogr
 		$u = "$username_root$i";
 		add_new_user($u, $password, '');
 		change_user_status($u, USER_STATUS_ACTIVE);
-	
+
 		if (!empty($autogroup))
 			add_user_to_group($u, $autogroup);
 	}
@@ -229,13 +249,14 @@ function delete_user($user)
 	
 	/* delete user saved queries and categorised queries */
 	$result = do_mysql_query("select query_name, saved from saved_queries where saved > ".CACHE_STATUS_UNSAVED." and user = '$user'");
+	                                                                                  // TODO should be != ratehr than > surely???????
 	while (false !== ($q = mysql_fetch_object($result)))
 	{
 		if ($q->saved == CACHE_STATUS_CATEGORISED)
 		{
 			/* catquery */
 			$inner_result = do_mysql_query("select dbname from saved_catqueries where catquery_name='{$q->query_name}'");
-			list($dbname) = mysql_fetch_row($inner_result);			
+			list($dbname) = mysql_fetch_row($inner_result);
 			do_mysql_query("drop table if exists $dbname");
 			do_mysql_query("delete from saved_catqueries where catquery_name='{$q->query_name}'");
 		}
@@ -257,14 +278,23 @@ function touch_user($username)
 }
 
 
+/**
+ * Changes the specified user's password.
+ * 
+ * Note that on a change of password, a log out should alos be forced: but this funciton doesn't do that,
+ * caller should use another funciton afterwards to make that happen. 
+ * 
+ * @param string $user          Username.
+ * @param string $new_password  New password.
+ */
 function update_user_password($user, $new_password)
 {
 	$user = mysql_real_escape_string($user);
 
 	if (empty($new_password))
-		exiterror_general("Cannot set password to empty string!");
+		exiterror("Cannot set password to empty string!");
 	$new_passhash = generate_new_hash_from_password($new_password);
-	
+
 	do_mysql_query("update user_info set passhash = '$new_passhash' where username = '$user'");
 }
 
@@ -406,7 +436,7 @@ function change_user_status($user, $new_status)
 	$new_status = (int) $new_status;
 	$user = mysql_real_escape_string($user);
 	
-	/* do nothing if mew status not a valid status constant */
+	/* do nothing if new status not a valid status constant */
 	switch ($new_status)
 	{
 	case USER_STATUS_UNVERIFIED:
@@ -457,7 +487,7 @@ function get_user_setting($username, $field)
  * as the user logged-on in the environment (global $User).
  */
 function get_user_info($username)
-{	
+{
 	static $cache = array();
 	
 	if (isset($cache[$username]))
@@ -467,7 +497,7 @@ function get_user_info($username)
 	
 	$result = do_mysql_query("SELECT * from user_info WHERE username = '$username'");
 	
-	if (mysql_num_rows($result) == 0)
+	if (0 == mysql_num_rows($result))
 		return false;
 	else
 	{
@@ -491,45 +521,57 @@ function get_all_users_info()
 	
 	while (false !== ($o = mysql_fetch_object($result)))
 		$users[$o->id] = $o;
-		
+	
 	return $users;
 }
 
 
 
 /** 
- * Update a user setting relating to the user interface tweaks.
- * TODO change name?
+ * Update a user setting (interface preferences only, not logon info).
  */
 function update_user_setting($username, $field, $setting)
 {
-	$field = mysql_real_escape_string($field);
-	$setting = mysql_real_escape_string($setting);
+	/* instead of using mysql escape for field, we go through this switch instead. */
+	switch($field)
+	{
+	/* STRING fields */
+	case 'realname':
+	case 'affiliation':
+	case 'country':
+	case 'linefeed':
+		$new_val_sql = '\'' . mysql_real_escape_string($setting) . '\'';
+		break;
+		
+	/* BOOLEAN fields */
+	case 'conc_kwicview':
+	case 'conc_corpus_order':
+	case 'cqp_syntax':
+	case 'context_with_tags':
+	case 'use_tooltips':
+	case 'css_monochrome':
+	case 'thin_default_reproducible':
+	case 'freqlist_altstyle':
+		$new_val_sql = ($setting ? '1' : '0');
+		break;
+		
+	/* INTEGER fields (incl. integers representing constants) */
+	case 'coll_statistic':
+	case 'coll_freqtogether':
+	case 'coll_freqalone':
+	case 'coll_from':
+	case 'coll_to':
+	case 'max_dbsize':
+		$new_val_sql = (int) $setting;
+		break;
+
+	default:
+		exiterror('Update operation: not a valid setting.');
+	}
+	
 	$username = mysql_real_escape_string($username);
 	
-	/* only certain fields are allowed to be changed via this function. */
-	$fields_allowed = array(
-		'conc_kwicview',
-		'conc_corpus_order',
-		'cqp_syntax',
-		'context_with_tags',
-		'use_tooltips',
-		'coll_statistic',
-		'coll_freqtogether',
-		'coll_freqalone',
-		'coll_from',
-		'coll_to',
-		'max_dbsize',
-		'linefeed',
-		'thin_default_reproducible',
-		'realname',
-		'affiliation',
-		'country'
-	);
-//TODO above not actually used???
-	
-	/* nb. This treats all values as string, although many are ints, but it seems to work... */
-	do_mysql_query("UPDATE user_info SET $field = '$setting' WHERE username = '$username'");
+	do_mysql_query("UPDATE user_info SET $field = $new_val_sql WHERE username = '$username'");
 }
 
 /** 
@@ -540,7 +582,7 @@ function update_user_setting($username, $field, $setting)
  * @param array $settings   Associative field=>value array of settings to update. 
  */
 function update_multiple_user_settings($username, $settings)
-{	
+{
 	foreach ($settings as $field => $value)
 		update_user_setting($username, $field, $value);
 }
@@ -553,7 +595,7 @@ function update_multiple_user_settings($username, $settings)
 function get_user_linefeed($username)
 {
 	$current = get_user_setting($username, 'linefeed');
-	
+
 	if ($current == NULL || $current == '' || $current = 'au')
 		$current = guess_user_linefeed($username);
 
@@ -609,7 +651,7 @@ function guess_user_linefeed($user_to_guess)
  */
 function get_security_rand_function()
 {
-	/* Note: If we have PHP 7, we get random_int() */
+	/* Note: If we have PHP 7, we get random_int() (from the CPSRNG) */
 	if (0 >= version_compare('7.0.0', PHP_VERSION))
 		return 'random_int';
 	/* otherwise, use mcrypt, if we have it */
@@ -619,20 +661,21 @@ function get_security_rand_function()
 		return 'mt_rand';
 	/* mt_rand is our fallback albeit it's a poor substitute... */
 }
-/*
+/**
  * Get a random 32-bit signed integer (in a specified range).
  * Note, there are no checks for dodgy parameters, so make sure you use it correctly!
  */
 function wrapped_mcrypt_rand($min, $max)
 {
-	list($val) = unpack("l_", mcrypt_create_iv(4, MCRYPT_DEV_URANDOM));
+	$arr = unpack("l_", mcrypt_create_iv(4, MCRYPT_DEV_URANDOM));
+	$val = $arr["_"];
 	
 	/* $val is in the range -0x7fffffff to 0x7fffffff, so abs it*/
 	$fraction = ((float) abs($val)) / (float)0x7fffffff;
-	/* any fraction between 0/0x7fffffff is equally likely */
+	/* any fraction between 0/0x7fffffff and 0x7fffffff/0x7fffffff is equally likely */
 	
 	/* return min plus the randomised fraction of the range */
-	return $min + (int)round( $fraction * ($max - $min), 0);
+	return $min + (int)round($fraction * ($max - $min), 0);
 }
 
 
@@ -643,15 +686,29 @@ function generate_new_hash_from_password($password)
 {
 	/* we are using BLOWFISH with 2^11 iterations, so start of salt always same: */
 	$salt = '$2a$11$';
-	/* nb. Blowfish cost parameter increased from 10 to 11 in v3.2 according to updated best advice */
-	
-	/* get 22 (pseudo-)random bytes */
+	/* NOTES ON HASH ALGORITHM:
+	 * 
+	 * (1) $2a may produce buggy behaviour pre PHP v5.3.7 that it does not produce after.
+	 *     PHP after 5.3.7 has alternatives $2x and $2y which allow different approaches to
+	 *     backward compatibility. http://www.php.net/security/crypt_blowfish.php
+	 *     (x = keep buggy mode; y = don't use countermeasures against old, buggy hashes.)
+	 *     But in the case of CQPweb neither of these seems necessary. So we use $2a, IE
+	 *     in PHP < 5.3.7 get very-rarely buggy hashes (unavoidable), and
+	 *     in PHP > 5.3.7 get correct behaviour, with anti-old-hash countermeasures. 
+	 * 
+	 * (2) Blowfish cost parameter increased from 10 to 11 in v3.2 according to updated best advice.
+	 */
+
+	/* get 22 (pseudo-)random bytes from the alphabet that BLOWFISH expects */
 	$salt_language = './ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 	$randfunc = get_security_rand_function();
 	for ($i = 0; $i < 22 ; $i++)
 		$salt .= $salt_language[$randfunc(0,63)];
 
 	return crypt($password, $salt);
+	/* note that we use crypt() rather than password_hash(), which generates your salt for you
+	 * and thereby makes life full of sunshine and rainbows, because password_hash()
+	 * was introduced in PHP 5.5 and 'twill be many a year afore we can assume our users have it. */
 }
 
 /**
@@ -706,7 +763,7 @@ function check_user_cookie_token($token)
 	$u_id = user_name_to_id($username);
 	$hash = hash('sha256', $token);
 
-	$result = do_mysql_query("select creation from user_cookie_tokens where token = CAST(x'$hash' as UNSIGNED) and user_id = $u_id");
+	$result = do_mysql_query("select creation from user_cookie_tokens where token = '$hash' and user_id = $u_id");
 
 	if (mysql_num_rows($result) < 1)
 		return false;
@@ -719,7 +776,7 @@ function check_user_cookie_token($token)
 
 /**
  * Creates a new pseudorandom string of letters and numbers (32 chars in length),
- * which is appended to username + separator to form a token.
+ * which is appended to username + separator (:) to form a token.
  */
 function generate_new_cookie_token($username)
 {
@@ -740,7 +797,9 @@ function generate_new_cookie_token($username)
 }
 
 /**
- * Cookie tokens are generated as "$username:$random_text".
+ * Cookie tokens are generated as "$username:$random_text" 
+ * (the hash of the whole thing being what is actually stored in the "token"
+ * column of the database table.) 
  *
  * This function breaks up such a token
  * and returns the two pieces as an array (0=>username, 1=>random text).
@@ -776,7 +835,7 @@ function register_new_cookie_token($token)
 		$hash = hash('sha256', $token);
 		$ctime = time();
 		$expiry = $ctime + $Config->cqpweb_cookie_max_persist;
-		do_mysql_query("insert into user_cookie_tokens (token, user_id, expiry, creation) values (CAST(x'$hash' as UNSIGNED), $u_id, $expiry, $ctime)");
+		do_mysql_query("insert into user_cookie_tokens (token, user_id, expiry, creation) values ('$hash', $u_id, $expiry, $ctime)");
 
 		/* every time a new token is registered, run cleanup */
 		cleanup_expired_cookie_tokens();
@@ -798,7 +857,7 @@ function touch_cookie_token($token)
 	$u_id = user_name_to_id($username);
 	$hash = hash('sha256', $token);
 
-	do_mysql_query("update user_cookie_tokens set expiry = $expiry where token = CAST(x'$hash' as UNSIGNED) and user_id = $u_id");
+	do_mysql_query("update user_cookie_tokens set expiry = $expiry where token = '$hash' and user_id = $u_id");
 }
 
 
@@ -821,24 +880,62 @@ function delete_cookie_token($token)
 	{
 		$u_id = user_name_to_id($username);
 		$hash = hash('sha256', $token);
-		do_mysql_query("delete from user_cookie_tokens where token = CAST(x'$hash' as UNSIGNED) and user_id = $u_id");
+		do_mysql_query("delete from user_cookie_tokens where token = '$hash' and user_id = $u_id");
 	}
+}
+
+/**
+ * Invalidates (deletes) all current tokens belonging to a specified user.
+ * This has the effect of forcing log out from all browser sessions where they
+ * are currently logged in.
+ * 
+ * It's possible to specify a single exception: a token not to be deleted.
+ * This allows just one login to persist (e.g. if the change of password
+ * has been done *from that login*).
+ * 
+ * @param string $username      Username. 
+ * @param string $except_token  Full token (username:content format) to preserve.
+ *                              If unspecified, all sessions are logged out.
+ */
+function invalidate_user_cookie_tokens($username, $except_token = false)
+{
+	$u_id = user_name_to_id($username);
+	
+	$sql = "delete from user_cookie_tokens where user_id = $u_id";
+	
+	if (! empty($except_token))
+	{
+		$hash = hash('sha256', $except_token);
+		$sql .= " and token != '$hash'"; 
+	}
+	
+	do_mysql_query($sql);
+}
+
+
+/**
+ * Deletes all log-in tokens. Equivalent to forcing a logout of
+ * all users currently logged in, everywhere.
+ */
+function invalidate_all_cookie_tokens()
+{
+	do_mysql_query("delete from user_cookie_tokens");
 }
 
 
 /**
  * Does all necessary steps to generate and emit a cookie token for the currently-logged in user.
  *
- * @param $username
- * @param $persist   Boolean: persistent cookie = true; this browser session only = false.
+ * @param string $username  Username to emit the cookie for.
+ * @param bool   $persist   Persistent cookie = true; this browser session only = false.
  */
 function emit_new_cookie_token($username, $persist)
 {
 	global $Config;
-	
+
 	$token = generate_new_cookie_token($username);
 	register_new_cookie_token($token);
-	
+
 	/* how long before timeout? either 1 year (i.e. forever given that tokens expire before that at the server end), or till browser closed */
 	$browser_timeout = ($persist ? (time()+(365*24*60*60)) : 0);
 
@@ -864,7 +961,7 @@ function group_name_to_id($group)
 	$group = mysql_real_escape_string($group);
 	$result = do_mysql_query("select id from user_groups where group_name = '$group'");
 	if (mysql_num_rows($result) < 1)
-		exiterror_general("Invalid group name specified at database level: $group");
+		exiterror("Invalid group name specified at database level: $group");
 	list($id) = mysql_fetch_row($result);
 	return $id;
 }
@@ -874,43 +971,50 @@ function group_id_to_name($id)
 	$id = (int)$id;
 	$result = do_mysql_query("select group_name from user_groups where id = $id");
 	if (mysql_num_rows($result) < 1)
-		exiterror_general("Invalid group ID specified at database level: $id");
+		exiterror("Invalid group ID specified at database level: $id");
 	list($name) = mysql_fetch_row($result);
 	return $name;
 }
 
 
 /**
- * Create a new group with the speciifed name (description and autojoin-regex can also
+ * Create a new group with the specified name (description and autojoin-regex can also
  * be set at creation time).
  */
 function add_new_group($group, $description = '', $regex = '')
 {
 	$group = cqpweb_handle_enforce($group);
 	if (empty($group))
-		exiterror_general("You cannot create a group with no name!");
+		exiterror("You cannot create a group with no name!");
 	if (0 < mysql_num_rows(do_mysql_query("select id from user_groups where group_name = '$group'")))
-		exiterror_general("You tried to create a group which already exists!"); 
+		exiterror("You tried to create a group which already exists!"); 
 
 	$description = mysql_real_escape_string($description);
 	$regex = mysql_real_escape_string($regex);
-	
+
 	do_mysql_query("insert into user_groups (group_name,description,autojoin_regex) values
 		('$group','$description','$regex')");
 }
 
 
 
-
+/**
+ * Deletes a user group.
+ * 
+ * @param string $group  Name of the group to delete.
+ */
 function delete_group($group)
 {
 	assert_not_reserved_group($group);
-	
+
 	$g = group_name_to_id($group);
-	
+
 	/* delete all memberships */
 	do_mysql_query("delete from user_memberships where group_id = $g");
-	
+
+	/* delete group privilege grants */
+	do_mysql_query("delete from user_grants_to_groups where group_id = $g");
+
 	/* delete group */
 	do_mysql_query("delete from user_groups where id = $g");
 }
@@ -919,23 +1023,42 @@ function delete_group($group)
 /**
  * Assertion: causes an error abort if this group is one of the "reserved" 
  * group names (i.e. magic, can't be deleted from the database etc.)
+ * 
+ * @param string $group  The group name to check.
  */
 function assert_not_reserved_group($group)
 {
 	if ($group == 'superusers' || $group == 'everybody')
-		exiterror("An illegal operation was attempted on one of the system-reserved groups, namely $group.");
+		exiterror("An illegal operation was attempted on one of the system-reserved groups, namely [$group].");
 }
 
 /**
- * returns flat array of group names (ordered alphabetically, but with superusers and everybody first)
+ * Returns flat array of group names (ordered alphabetically, but with superusers and everybody first).
+ * 
+ * If the function is passed a username, then only the groups of which that user is a member will be returned. 
+ * 
+ * @param  string $check_user  Optional: if supplied then ity is a username which limits the list of groups returned.
+ * @return array               Flat array of group names.
  */
-function get_list_of_groups()
+function get_list_of_groups($check_user = NULL)
 {
-	$result = do_mysql_query("select group_name from user_groups order by group_name asc");
-	$g = array('superusers','everybody');
+	if (empty($check_user))
+	{
+		$result = do_mysql_query("select group_name from user_groups order by group_name asc");
+		$g = array('superusers','everybody');
+	}
+	else
+	{
+		$u = user_name_to_id($check_user);
+		$sql = "select group_name from user_memberships inner join user_groups on id = group_id where user_id = $u order by group_name asc";
+		$result = do_mysql_query($sql);
+		$g = ( user_is_superuser($check_user) ? array('superusers','everybody') : array('everybody') );
+	}
+
 	while (false !== ($r = mysql_fetch_row($result)))
 		if ( ! ($r[0] == 'superusers' || $r[0] == 'everybody') )
-			$g[] = $r[0];	
+			$g[] = $r[0];
+
 	return $g;
 }
 
@@ -943,7 +1066,10 @@ function get_list_of_groups()
 
 
 /**
- * Returns flat array of usernames.
+ * Lists the usernames of the users who are in the specified group.
+ * 
+ * @param  string $group  Name of the group to list.
+ * @return array          Returns flat array of usernames.
  */
 function list_users_in_group($group)
 {
@@ -955,8 +1081,7 @@ function list_users_in_group($group)
 	else
 	{
 		$g = group_name_to_id($group);
-		$sql = "select user_info.username from user_memberships 
-				inner join user_info on user_info.id = user_memberships.user_id where group_id = $g";
+		$sql = "select user_info.username from user_memberships inner join user_info on user_info.id = user_memberships.user_id where group_id = $g";
 	}
 	
 	$result = do_mysql_query($sql);
@@ -969,12 +1094,18 @@ function list_users_in_group($group)
 	return $users;
 }
 
+/**
+ * Gets a database object for a given group.
+ * 
+ * @param  string $group  Name of the group to look up. 
+ * @return object         Database object containing all information on the group.
+ */
 function get_group_info($group)
 {
 	$group = mysql_real_escape_string($group);
 	$result = do_mysql_query("select * from user_groups where group_name = $group");
 	if (1 > mysql_num_rows($result))
-		exiterror_general("Info requested for non-existent group $group!");
+		exiterror("Info requested for non-existent group $group!");
 	return mysql_fetch_object($result);
 }
 
@@ -1005,7 +1136,7 @@ function update_group_info($group, $new_description, $new_regex)
 {
 	assert_not_reserved_group($group);
 	$group = mysql_real_escape_string($group);
-	$new_description = mysql_real_escape_string($new_description);  
+	$new_description = mysql_real_escape_string($new_description);
 	$new_regex = mysql_real_escape_string($new_regex);
 	do_mysql_query("update user_groups set description = '$new_description', autojoin_regex = '$new_regex' where group_name = '$group'");
 }
@@ -1032,6 +1163,13 @@ function remove_user_from_group($user, $group)
 	do_mysql_query("delete from user_memberships where group_id = $g and user_id = $u");
 }
 
+/**
+ * Check whether a user is a member of a given group.
+ * 
+ * @param  string $user    A username.
+ * @param  string $group   A group name.
+ * @return boolean         True iff the user is a member of the group.
+ */
 function user_is_group_member($user, $group)
 {
 	switch ($group)
@@ -1043,13 +1181,12 @@ function user_is_group_member($user, $group)
 	default:
 		$g = group_name_to_id($group);
 		$u = user_name_to_id($user);
-		return (0 < mysql_num_rows(do_mysql_query("select * from user_memberships where user_id = $u and group_id = $g")));	
+		return (0 < mysql_num_rows(do_mysql_query("select * from user_memberships where user_id = $u and group_id = $g")));
 	}
 }
 
 /**
  * Returns associative array of groupname => group_autojoin_regex
- *  
  */
 function list_group_regexen()
 {
@@ -1101,7 +1238,7 @@ function apply_custom_group_regex($group, $regex)
 }
 
 
-/**
+/*
 
 	THE CODING OF PRIVILEGES
 	========================
@@ -1175,11 +1312,42 @@ function apply_custom_group_regex($group, $regex)
 	within any corpus).
 	
 	This applies currently only to subcorpus frequency list creation; in future, it might apply
-	to collocation frquency list creation as well (the latter currently keys off a pair
+	to collocation frequency list creation as well (the latter currently keys off a pair
 	of global variables set via the configuration file).
 	
 	The "object" of this kind of privilege is an integer. Its string representation is that integer,
 	as a string. (Simples!)
+	
+	Privileges of type PRIVILEGE_TYPE_UPLOAD_FILE
+	---------------------------------------------
+	
+	This privilege enables a user to upload a file (of ANY kind, for ANY reason: subsystems may
+	add their own specific restrictions on files, but this privilege governs all file uploads).
+	
+	This privilege covers the ability to move a file of a given size out of temporary HTTP and
+	into CQPweb's storage (whether it persists there is a sseparate issue!). A privilege of this
+	sort applies to a particular number of bytes (its scope object) which = the maximum size of
+	files that can be uploaded. Admin users do not have this restriction. 
+	
+	The "object" of this kind of privilege is an integer. Its string representation is that integer,
+	as a string (just like for FREQLIST_CREATE).
+	
+	Privileges of type PRIVILEGE_TYPE_CQP_BINARY_FILE
+	-------------------------------------------------
+	
+	This privilege activates access to the user's binary files in the CQP cache.
+	
+	The main purpose of this privilege is to allow suers with very big saved queries to move them
+	off the server for cold-storage, freeing up cache space, for potential re-upload later.
+	
+	(NB!!! as of v 3.2.25, the relevant functions are only semi-implemented....)
+	
+	It's for experts only; admin users always have use of binary files. 
+	
+	The "object" of this kind of privilege is always an empty string; its string representation
+	is likewise, always just a string. So pribvileges of this typoe will only differ by their
+	description. There is not, actually, any point having more than the one that is part of the
+	default non-corpus privileges.
 	
 */
 
@@ -1195,18 +1363,25 @@ function encode_privilege_scope_to_string($type, $object)
 	case PRIVILEGE_TYPE_CORPUS_NORMAL:
 	case PRIVILEGE_TYPE_CORPUS_RESTRICTED:
 		/* "object" is an array of corpus names... */
+		if (empty($object))
+			return '';
 		foreach($object as &$c)
 			$c = cqpweb_handle_enforce($c);
 		return implode('~', $object);
 		
 	case PRIVILEGE_TYPE_FREQLIST_CREATE:
+	case PRIVILEGE_TYPE_UPLOAD_FILE:
 		/* "object" is an integer */
 		return (string)$object;
+	
+	case PRIVILEGE_TYPE_CQP_BINARY_FILE:
+		/* ignore whatever was passed, "object" is always an empty string. */
+		return '';
 		
 	/* Add more privileges here as the system develops. */
-	
+
 	default:
-		exiterror_general("Critical error: invalid privilege type constant encountered!", __FILE__, __LINE__);
+		exiterror("Critical error: invalid privilege type constant encountered when encoding!");
 	}
 }
 
@@ -1223,16 +1398,24 @@ function decode_privilege_scope_from_string($type, $string)
 	case PRIVILEGE_TYPE_CORPUS_NORMAL:
 	case PRIVILEGE_TYPE_CORPUS_RESTRICTED:
 		/* "object" is an array of corpus names... */
-		return explode ('~', $string);
+		if ('' == $string)
+			return array();
+		else
+			return explode ('~', $string);
 
 	case PRIVILEGE_TYPE_FREQLIST_CREATE:
+	case PRIVILEGE_TYPE_UPLOAD_FILE:
 		/* "object" is a single integer */
 		return (int)$string;
 		
+	case PRIVILEGE_TYPE_CQP_BINARY_FILE:
+		/* "object" is utterly irrelevant. Empty string symbolises. */ 
+		return '';
+
 	/* Add more privileges here as the system develops. */
 
 	default:
-		exiterror_general("Critical error: invalid privilege type constant encountered!", __FILE__, __LINE__);
+		exiterror("Critical error: invalid privilege type constant encountered when decoding!");
 	}
 }
 
@@ -1247,6 +1430,8 @@ function print_privilege_scope_as_html($type, $object)
 	case PRIVILEGE_TYPE_CORPUS_NORMAL:
 	case PRIVILEGE_TYPE_CORPUS_RESTRICTED:
 		/* "object" is an array of corpus names... */
+		if (empty($object))
+			return '<b>Nothing</b> (empty set of corpora';
 		foreach($object as &$c)
 			$c = cqpweb_handle_enforce($c);
 		$s = (count($object) > 1 ? '<b>Corpora:</b> ' : '<b>Corpus:</b> ');
@@ -1254,13 +1439,21 @@ function print_privilege_scope_as_html($type, $object)
 		return $s;
 
 	case PRIVILEGE_TYPE_FREQLIST_CREATE:
-		/* "object" is a single integer */
+		/* "object" is a single integer, so just needs a suffix, plus thousand-grouping */
 		return number_format($object) . ' tokens';
-			
-	/* Add more privileges here as the system develops. */
 	
+	case PRIVILEGE_TYPE_UPLOAD_FILE:
+		/* also an integer, but better rendered as MB than bytes */
+		return number_format( ((float)$object)/(1024.0*1024.0) , 0 ) . ' MB';
+		
+	case PRIVILEGE_TYPE_CQP_BINARY_FILE:
+		/* scope object not defined. */
+		return '<em>(n/a)</em>';
+	
+	/* Add more privileges here as the system develops. */
+
 	default:
-		exiterror_general("Critical error: invalid privilege type constant encountered!", __FILE__, __LINE__);
+		exiterror("Critical error: invalid privilege type constant encountered when printing!");
 	}
 }
 
@@ -1275,9 +1468,122 @@ function add_new_privilege($type, $scope, $description = '')
 	$scope_string = encode_privilege_scope_to_string($type, $scope);
 	$type = (int)$type;
 	$description = mysql_real_escape_string($description);
-	
+
 	do_mysql_query("insert into user_privilege_info (type,scope,description) values ($type, '$scope_string', '$description')") ;
 }
+
+
+function update_privilege_description($id, $new_desc)
+{
+	$id = (int) $id;
+	$new_desc = mysql_real_escape_string($new_desc);	
+	do_mysql_query("update user_privilege_info set description = '$new_desc' where id = $id "); 
+}
+
+/**
+ * Changes the maximum imposed by a privilege of one of the types whose
+ * scope is an integer limit.
+ * 
+ * @param int $id        Privilege to change.
+ * @param int $new_limit New integer maximum.
+ */
+function update_privilege_integer_max($id, $new_limit)
+{
+	$id = (int) $id;
+	$info = get_privilege_info($id);
+
+	switch($info->type)
+	{
+	case PRIVILEGE_TYPE_FREQLIST_CREATE:
+	case PRIVILEGE_TYPE_UPLOAD_FILE:
+		break;
+	default:
+		exiterror("You cannot set a maximum integer for a privilege of this kind.");
+	}
+	
+	$new_scope = encode_privilege_scope_to_string($info->type, (int)$new_limit);
+
+	do_mysql_query("update user_privilege_info set scope = '$new_scope' where id = $id "); 
+}
+
+
+
+/**
+ * Changes the privilege type of a corpus-access privilege to one of the other levels.
+ * 
+ * Note, both the new level, and the existing level of the privilege must be 
+ * one of the ones like PRIVILEGE_TYPE_CORPUS_*. Otherwise, nothing happens.
+ * 
+ * @param int $id                     The privilege to modify.
+ * @param int $new_privilege_type     The privilege type constant of the new level.
+ */
+function update_privilege_access_level($id, $new_privilege_type)
+{
+	$id = (int) $id;
+	$info = get_privilege_info($id);
+	
+	$new_privilege_type = (int) $new_privilege_type;
+	
+	$check = array(PRIVILEGE_TYPE_CORPUS_FULL,PRIVILEGE_TYPE_CORPUS_NORMAL,PRIVILEGE_TYPE_CORPUS_RESTRICTED);
+	if ( ! (in_array((int)$info->type, $check, true) && in_array($new_privilege_type, $check, true)) )
+		return;
+	
+	do_mysql_query("update user_privilege_info set type = $new_privilege_type where id = $id ");
+}
+
+
+function add_corpus_to_privilege_scope($id, $corpus_to_add)
+{
+	$id = (int) $id;
+	$info = get_privilege_info($id);
+
+	switch($info->type)
+	{
+	case PRIVILEGE_TYPE_CORPUS_FULL:
+	case PRIVILEGE_TYPE_CORPUS_NORMAL:
+	case PRIVILEGE_TYPE_CORPUS_RESTRICTED:
+		break;
+	default:
+		exiterror("You cannot add a corpus to the scope of a privilege of this kind.");
+	}
+	
+	$corpus_to_add = cqpweb_handle_enforce($corpus_to_add);
+	$info->scope_object[] = $corpus_to_add;
+	sort($info->scope_object);
+	
+	$new_scope = encode_privilege_scope_to_string($info->type, $info->scope_object);
+
+	do_mysql_query("update user_privilege_info set scope = '$new_scope' where id = $id "); 
+}
+
+
+function remove_corpus_from_privilege_scope($id, $corpus_to_remove)
+{
+	$id = (int) $id;
+	$info = get_privilege_info($id);
+
+	switch($info->type)
+	{
+	case PRIVILEGE_TYPE_CORPUS_FULL:
+	case PRIVILEGE_TYPE_CORPUS_NORMAL:
+	case PRIVILEGE_TYPE_CORPUS_RESTRICTED:
+		break;
+	default:
+		exiterror("You cannot remove a corpus from the scope of a privilege of this kind.");
+	}
+	
+	$corpus_to_remove = cqpweb_handle_enforce($corpus_to_remove);
+	
+	if (false !== ($ix = array_search($corpus_to_remove, $info->scope_object)))
+	{
+		unset($info->scope_object[$ix]);
+		$new_scope = encode_privilege_scope_to_string($info->type, $info->scope_object);
+		do_mysql_query("update user_privilege_info set scope = '$new_scope' where id = $id "); 
+	}
+	/* if the corpus wasn't on that list, do nothing. */
+}
+
+
 
 /**
  * Generate the 3 default privileges for a specified corpus.
@@ -1295,7 +1601,7 @@ function create_corpus_default_privileges($corpus)
 	
 	if (!in_array($corpus, list_corpora()))
 		return false;
-		
+	
 	foreach(array_keys($mapper) as $type)
 	{
 		/* does a privilege exist which has this type and scope over just this corpus? */ 
@@ -1305,7 +1611,13 @@ function create_corpus_default_privileges($corpus)
 	return true;
 }
 
-function create_all_default_privileges()
+function create_default_privileges_for_all_corpora()
+{
+	foreach(list_corpora() as $c)
+		create_corpus_default_privileges($c);
+}
+
+function create_all_default_noncorpus_privileges()
 {
 	/* create default privileges for freqlists of 1 million, 10 million, 25 million, and 100 million. */
 	$text = 'Frequency lists for subcorpora up to';
@@ -1317,10 +1629,19 @@ function create_all_default_privileges()
 		add_new_privilege(PRIVILEGE_TYPE_FREQLIST_CREATE, 25000000,  "$text 25 million tokens.");
 	if (false === check_privilege_by_content(PRIVILEGE_TYPE_FREQLIST_CREATE, 100000000))
 		add_new_privilege(PRIVILEGE_TYPE_FREQLIST_CREATE, 100000000, "$text 100 million tokens.");
-
-	/* create default privileges for each extant corpus */
-	foreach(list_corpora() as $c)
-		create_corpus_default_privileges($c);
+	
+	/* create default privileges for uploads: 0.5 MB, 1 MB, 2 MB */
+	$text = 'Upload files up to';
+	if (false === check_privilege_by_content(PRIVILEGE_TYPE_UPLOAD_FILE, 1024 * 512))
+		add_new_privilege(PRIVILEGE_TYPE_UPLOAD_FILE, 1024 * 512,   "$text 0.5 MB.");
+	if (false === check_privilege_by_content(PRIVILEGE_TYPE_UPLOAD_FILE, 1024 * 1024))
+		add_new_privilege(PRIVILEGE_TYPE_UPLOAD_FILE, 1024 * 1024,  "$text 1 MB.");
+	if (false === check_privilege_by_content(PRIVILEGE_TYPE_UPLOAD_FILE, 1024 * 2048))
+		add_new_privilege(PRIVILEGE_TYPE_UPLOAD_FILE, 1024 * 2048,  "$text 2 MB.");
+	
+	/* create the sole CQP bionary file privilege. */
+	if (false === check_privilege_by_content(PRIVILEGE_TYPE_CQP_BINARY_FILE, ""))
+		add_new_privilege(PRIVILEGE_TYPE_CQP_BINARY_FILE, "", "CQP binary file access privilege");
 }
 
 /**
@@ -1333,7 +1654,7 @@ function delete_privilege($id)
 	/* delete all grants of this privilege; then delete the privilege itself. */
 	do_mysql_query("delete from user_grants_to_users  where privilege_id = $id");
 	do_mysql_query("delete from user_grants_to_groups where privilege_id = $id");
-	do_mysql_query("delete from user_privilege_info where id = $id");
+	do_mysql_query("delete from user_privilege_info   where id = $id");
 }
 
 /** 
@@ -1397,26 +1718,32 @@ function get_all_privilege_descriptions()
  * 
  * Optional conditions can be specified as an associative array, as follows:
  * 
- * - If key 'corpus' is set, then only privileges that affect the corpus specified
+ * - If key 'corpus' is set, then only corpus privileges that affect the corpus specified
  *   are returned. 
- * - (others to follow)
- * 
- * 
- * (Add specification of how different conditions interact, if they do....)
+ * - If key 'only' is set (value: an integer constant) then only the privileges
+ *   of that type are returned.
+ * (set both those keys,  and you get the intersection, which may be empty.)
  * 
  * @see get_privilege_info
  */
 function get_all_privileges_info($conditions = array())
 {
 	$cond = '';
-		
+	
 	if (isset($conditions['corpus']))
-		$cond = 'where type=' . PRIVILEGE_TYPE_CORPUS_FULL 
+		$cond = ' (type=' . PRIVILEGE_TYPE_CORPUS_FULL 
 				. ' or type=' . PRIVILEGE_TYPE_CORPUS_NORMAL 
-				. ' or type=' . PRIVILEGE_TYPE_CORPUS_RESTRICTED; 
+				. ' or type=' . PRIVILEGE_TYPE_CORPUS_RESTRICTED
+				. ') ';
+	if (isset($conditions['type']))
+		$cond = (empty($cond) ? ' (type=' : ' and (type=') . (int)$conditions['type'] . ') ';
+	
+	if (!empty($cond))
+		$cond = "where $cond";
+	
+	$result = do_mysql_query("select * from user_privilege_info $cond order by id");
 
 	$list = array();
-	$result = do_mysql_query("select * from user_privilege_info $cond order by id");
 	while (false !== ($o = mysql_fetch_object($result)))
 	{
 		$o->scope_object = decode_privilege_scope_from_string($o->type, $o->scope);
@@ -1437,13 +1764,14 @@ function get_all_privileges_info($conditions = array())
  * Checks whether at least one privilege exists with the given type and scope.
  * 
  * Pass in scope as data object, not as string.
- *  
+ * 
  * Returns the privilege ID (if a privilege exists) or false (no such privilege exists).
  */
 function check_privilege_by_content($type, $scope)
 {
 	$type = (int)$type;
-	$scope_string = encode_privilege_scope_to_string($type,$scope);
+	$scope_string = encode_privilege_scope_to_string($type, $scope);
+	/* scope object string representations are always known-MySQL-safe */
 	
 	if (1 > mysql_num_rows($result = do_mysql_query("select id from user_privilege_info where type = $type and scope = '$scope_string'")))
 		return false;
@@ -1465,7 +1793,7 @@ function grant_privilege_to_user($user, $privilege_id, $expiry = 0)
 	if (0 < mysql_num_rows(do_mysql_query("select user_id from user_grants_to_users where user_id=$user_id and privilege_id=$privilege_id")))
 		return;
 
-	do_mysql_query("insert into user_grants_to_users(user_id, privilege_id, expiry_time) values ($user_id, $privilege_id,$expiry)");  
+	do_mysql_query("insert into user_grants_to_users(user_id, privilege_id, expiry_time) values ($user_id, $privilege_id,$expiry)");
 }
 
 function grant_privilege_to_group($group, $privilege_id, $expiry = 0)
@@ -1479,7 +1807,7 @@ function grant_privilege_to_group($group, $privilege_id, $expiry = 0)
 	if (0 < mysql_num_rows(do_mysql_query("select group_id from user_grants_to_groups where group_id=$group_id and privilege_id=$privilege_id")))
 		return;
 	
-	do_mysql_query("insert into user_grants_to_groups(group_id, privilege_id, expiry_time) values ($group_id, $privilege_id,$expiry)");  
+	do_mysql_query("insert into user_grants_to_groups(group_id, privilege_id, expiry_time) values ($group_id, $privilege_id,$expiry)");
 }
 
 function remove_grant_from_user($user, $privilege_id)
@@ -1526,12 +1854,12 @@ function list_groups_with_privilege($privilege_id)
 	
 	$result = do_mysql_query("select group_name from user_grants_to_groups
 							inner join user_groups on user_grants_to_groups.group_id = user_groups.id 
-							where privilege_id = $privilege_id");	
+							where privilege_id = $privilege_id");
 	
 	$names = array();
 	while (false !== ($r = mysql_fetch_row($result)))
 		$names[] = $r[0];
-	return $names;	
+	return $names;
 }
 
 
@@ -1581,11 +1909,10 @@ function get_collected_user_privileges($user)
 			$privileges[$grant->privilege_id] = $all_privs[$grant->privilege_id];
 	
 	/* add privileges held via groups */
-	foreach(get_list_of_groups() as $group)
-		if (user_is_group_member($user, $group))
-			foreach(list_group_grants($group) as $grant)
-				if ( ! isset($privileges[$grant->privilege_id]) )
-					$privileges[$grant->privilege_id] = $all_privs[$grant->privilege_id];
+	foreach(get_list_of_groups($user) as $group)
+		foreach(list_group_grants($group) as $grant)
+			if ( ! isset($privileges[$grant->privilege_id]) )
+				$privileges[$grant->privilege_id] = $all_privs[$grant->privilege_id];
 
 	return $privileges; 
 }
@@ -1613,11 +1940,22 @@ function clone_group_grants($from_group, $to_group)
 
 
 
+/* ******************** *
+ * USER MACRO FUNCTIONS *
+ * ******************** */
 
 
+
+/**
+ * Adds a CQP macro to the given user's account.
+ * 
+ * @param string $username    User account username.
+ * @param string $macro_name  Name to be given to the macro.
+ * @param string $macro_body  Body of the macro.
+ */
 function user_macro_create($username, $macro_name, $macro_body)
 {
-	$username = mysql_real_escape_string($username);
+	$username   = mysql_real_escape_string($username);
 	$macro_name = mysql_real_escape_string($macro_name);
 	$macro_body = mysql_real_escape_string($macro_body);
 	
@@ -1640,14 +1978,24 @@ function user_macro_create($username, $macro_name, $macro_body)
 	/* delete macro if already exists */
 	user_macro_delete($username, $macro_name, $macro_num_args);
 	
-	$sql_query = "INSERT INTO user_macros
+	$sql = "INSERT INTO user_macros
 		(user, macro_name, macro_num_args, macro_body)
 		values
 		('$username', '$macro_name', $macro_num_args, '$macro_body')";
 	
-	do_mysql_query($sql_query);
+	do_mysql_query($sql);
 }
 
+/**
+ * Deletes a specified user macro from a given user account.
+ * 
+ * Since a user can have 2 macros with the same name but different numbers of arguments,
+ * this function needs the specified N of arguments to be able to delete the right one.
+ * 
+ * @param string $username
+ * @param string $macro_name
+ * @param int    $macro_num_args
+ */
 function user_macro_delete($username, $macro_name, $macro_num_args)
 {
 	$username = mysql_real_escape_string($username);
@@ -1662,12 +2010,12 @@ function user_macro_delete($username, $macro_name, $macro_num_args)
 
 
 /**
- * Load all macros for the specified user. 
+ * Load all macros for the specified user to the global $cqp slave process.  
  */
 function user_macro_loadall($username)
 {
 	global $cqp;
-	
+
 	$username = mysql_real_escape_string($username);
 
 	$result = do_mysql_query("select * from user_macros where user='$username'");
@@ -1675,7 +2023,6 @@ function user_macro_loadall($username)
 	while (false !== ($r = mysql_fetch_object($result)))
 	{
 		$block = "define macro {$r->macro_name}({$r->macro_num_args}) ' ";
-		/* nb. Rather than use str_replace here, maybe use the CQP:: escape method? */
 		$block .= str_replace("'", "\\'", strtr($r->macro_body, "\t\r\n", "   ")) . " '";
 		$cqp->execute($block);
 	}
@@ -1686,9 +2033,9 @@ function user_macro_loadall($username)
 
 
 
-/* ***************** *
+/* ******************* *
  * CAPTCHA FUNCTIONS *
- * ***************** */
+ * ******************* */
 
 /**
  * Returns true if the captcha in DB matches the response.
@@ -1760,7 +2107,7 @@ function send_captcha_image($which)
 
 	if (mysql_num_rows($result) < 1)
 	{
-		$image = imagecreatetruecolor($width, $height);		
+		$image = imagecreatetruecolor($width, $height);
 		$bgcol   = imagecolorallocate($image, 255, 255, 255);
 		$textcol = imagecolorallocate($image, 0, 0, 0);
 		imagefill($image, 0, 0, $bgcol);
@@ -1857,7 +2204,7 @@ function send_captcha_image($which)
 				$fs = $fs - 8;
 		}
 
-		break;		
+		break;
 
 	
 	case 2:

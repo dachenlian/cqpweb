@@ -22,10 +22,6 @@
  */
 
 
-
-
-
-
 /**
  * 
  * @file
@@ -54,20 +50,23 @@
  */
 
 
-/* include defaults and settings */
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
+
 require('../lib/environment.inc.php');
 
 
 /* include all function files */
 include('../lib/admin-lib.inc.php');
-include("../lib/admin-install.inc.php");
+include('../lib/admin-install.inc.php');
 include('../lib/cache.inc.php');
 include('../lib/ceql.inc.php');
 include('../lib/db.inc.php');
+include('../lib/lgcurve-lib.inc.php');
 include('../lib/colloc-lib.inc.php');
 include('../lib/concordance-lib.inc.php');
 include('../lib/cqp.inc.php');
-include('../lib/cwb.inc.php');
 include('../lib/exiterror.inc.php');
 include('../lib/freqtable.inc.php');
 include('../lib/html-lib.inc.php');
@@ -79,6 +78,8 @@ include('../lib/indexforms-subcorpus.inc.php');
 include('../lib/indexforms-user.inc.php');
 include('../lib/library.inc.php');
 include('../lib/metadata.inc.php');
+// TODO add multivariate here once it is well defined.
+include('../lib/sql-definitions.inc.php');
 include('../lib/subcorpus.inc.php');
 require('../lib/templates.inc.php');
 include('../lib/uploads.inc.php');
@@ -91,7 +92,7 @@ cqpweb_startup_environment(CQPWEB_STARTUP_CHECK_ADMIN_USER, (PHP_SAPI == 'cli' ?
  * note above - only superusers get to use this script!
  * also note, this script assumes it is running within a corpus.
  * If it ISN'T, then you need to be careful not to call any
- * function that needs an environment $Corpus to be specfied.
+ * function that needs an environment $Corpus to be specified.
  * This applies, most critically, to admin-execute and execute-cli. 
  */
 
@@ -111,16 +112,36 @@ else
 /* extract the arguments */
 if (isset($_GET['args']))
 {
-	/* if args is not a string, then it has already been prepared, (e.g. by admin-execute... )
-	 * so we just need to array-ise it for passing to call_user_func_array... */
-	if (!is_string($_GET['args']))
+	/* args can be either a '#' delimited string (where the things between # are strings
+	 * either equal to or convertible to the arguments we want to pass),
+	 * in which case we explode it;
+	 * 
+	 * OR it can be pre-prepared by script that includes this one, to be some kind of
+	 * other single value (integer, object, whatever), which we array-ise in order to pass;
+	 * 
+	 * OR it can be an array, which we assume to be pre-prepared multiple arguments.
+	 * 
+	 * Note this means that it being integer 1, or an array containing integer 1, has the same effect.
+	 * 
+	 * It also measn that an array cannot be passed as a bare single-argument: it must be wrapped.
+	 * Strings that contain '#' naturally also cannot be passed as bare single-arguments, and
+	 * likewise must be wrapped. 
+	 */
+	if (is_array($_GET['args']))
 	{
+		/* pre-prepared array of arguments */
+		$argv = $_GET['args'];
+		$argc = count($argv);
+	}		
+	else if (!is_string($_GET['args']))
+	{
+		/* pre-prepared single argument */
 		$argv = array($_GET['args']);
 		$argc = 1;
 	}
-	/* otherwise, it's a string containing a series of string arguments */
 	else
 	{
+		/* non-prepared string containing a series of (possiby convertible) string arguments */
 		$argv = explode('#', $_GET['args']);
 		$argc = count($argv);
 	}

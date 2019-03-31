@@ -884,10 +884,12 @@ function printscreen_usersettings()
 		
 		<tr>
 			<td class="concordgeneral">
-				Show tooltips (JavaScript enabled browsers only)
+				Show tooltips
 				<br/>
-				<em>(When moving the mouse over some links (e.g. in a concordance), additional 
-				information will be displayed in tooltip boxes.)</em>
+				<em>
+					(When moving the mouse over some links (e.g. in a concordance), additional 
+					information will be displayed in tooltip boxes.)
+				</em>
 			</td>
 			<td class="concordgeneral">
 				<select name="newSetting_use_tooltips">
@@ -970,6 +972,16 @@ function printscreen_usersettings()
 					<option value="da"<?php echo ($User->linefeed == 'da' ? ' selected="selected"' : '');?>>Windows</option>
 					<option value="a"<?php  echo ($User->linefeed == 'a'  ? ' selected="selected"' : '');?>>Unix / Linux (inc. Mac OS X)</option>
 					<option value="d"<?php  echo ($User->linefeed == 'd'  ? ' selected="selected"' : '');?>>Macintosh (OS 9 and below)</option>
+				</select>
+			</td>
+		</tr>
+
+		<tr>
+			<td class="concordgeneral">File layout to use for frequency-list downloads</td>
+			<td class="concordgeneral">
+				<select name="newSetting_freqlist_altstyle">
+					<option value="0"<?php echo ($User->freqlist_altstyle == '0' ? ' selected="selected"' : '');?>>CQPweb default format</option>
+					<option value="1"<?php echo ($User->freqlist_altstyle == '1' ? ' selected="selected"' : '');?>>Alternative format (AntConc-compatible)</option>
 				</select>
 			</td>
 		</tr>
@@ -1122,7 +1134,7 @@ function printscreen_usermacros()
 			<td class="concordgrey"><input type="submit" value="Create macro"/></td>
 		</tr>
 		
-		<input type="hidden" name="macroUsername" value="<?php echo $user->username;?>" />
+		<input type="hidden" name="macroUsername" value="<?php echo $Uxer->username;?>" />
 		<input type="hidden" name="thisQ" value="userMacros" />
 		<input type="hidden" name="uT" value="y" />
 		

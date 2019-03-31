@@ -79,6 +79,8 @@ if  (!extension_loaded('mysql'))
 
 /**
  * Creates a global connection to a CQP child process.
+ * 
+ * If no argument is passed, the global $Corpus is activated if there is one. 
  */
 function connect_global_cqp($cqp_corpus_name = NULL)
 {
@@ -164,18 +166,31 @@ function connect_global_mysql()
 	 * MySQLi does link cleanup so once most people are using that, 
 	 * persistent connections are more likely to be useful.
 	 * 
-	 * The use of "@" above is suppress the use of depracation messages about 
+	 * The use of "@" above is suppress the occurrence of depracation messages about 
 	 * the MySQL extension. We won't need it after total MySQLi transition.
 	 */
 	
 	if (! $mysql_link)
-		exiterror_general('MySQL did not connect - please try again later!');
+		exiterror('MySQL did not connect - please try again later!');
 	
-	mysql_select_db($Config->mysql_schema, $mysql_link);
+	if (! mysql_select_db($Config->mysql_schema, $mysql_link))
+		exiterror('Could not set database in MySQL connection - critical error!');
 	
 	/* utf-8 setting is dependent on a variable defined in config.inc.php */
 	if ($Config->mysql_utf8_set_required)
-		mysql_set_charset("utf8", $mysql_link);
+		if (! mysql_set_charset("utf8", $mysql_link))
+			exiterror('Could not set character set for MySQL connection - critical error!');
+
+	/* the newer default for "sql_mode" in v 5.7 + of MySQL creates problems for various bits of CQPweb.
+	 * In particular, we NEED zeros in dates: a zero date indicates "has never happened", and so on. */ 
+	do_mysql_query("set sql_mode = \"\"");
+	/* TODO: in future, strict-SQL in the form of STRICT_TRANS_TABLES will continue to be default, 
+	 * and NO_ZERO_DATE will again be rolled into STRICT. 
+	 * We want to comply with this, longterm. So, we need to fix these issues. 
+	 * First, by finding places in the code where zero dates occur and getting rid 
+	 * (replace with Unix epoch date, 1970-01-01T00:00 as an alternative "empty" value for dates?)
+	 * Second, by running with STRICT switched on until all the problems are filtered out.
+	 */
 }
 /**
  * Disconnects from the MySQL server.
@@ -216,23 +231,24 @@ function get_db_version()
  * It inserts some additional info about what the query is, where it originated,
  * and which user is responsible and embeds it into the query as a MySQL comment.
  */
-function do_append_mysql_comment(&$sql_query)
+function do_append_mysql_comment(&$sql)
 {
 	global $User;
 	
 	$u = (isset($User->username) ? $User->username : '???');
-
-	$bt = debug_backtrace();
-	
-	/* this line pulls out the function that called do_mysql_query() */
-	$a = (count($bt) >= 3 ? $bt[2] : end($bt));
-
-	$f = (isset($a['function']) ? $a['function'] : '???');
-	
-// 	list($d) = explode('+', str_replace('T', ' ', date(DATE_ATOM)));
 	$d = date(CQPWEB_UI_DATE_FORMAT);
 
-	$sql_query = "$sql_query \n\t/* from User: $u | Function: $f() | $d */";
+	$bt = debug_backtrace();
+	/* this line pulls out the function that called do_mysql_query() */
+	for ($i = 1, $n = count($bt) ; $i < $n && preg_match('/^do_mysql_/', $bt[$i]['function']) ; $i++)
+		;
+	$f = (isset($bt[$i]['function']) ? $bt[$i]['function'] : '???');
+
+// old version
+// 	$a = (count($bt) >= 3 ? $bt[2] : end($bt));
+// 	$f = (isset($a['function']) ? $a['function'] : '???');
+
+	$sql = "$sql \n\t/* from User: $u | Function: $f() | $d */";
 }
 
 
@@ -246,7 +262,7 @@ function do_append_mysql_comment(&$sql_query)
  * 
  * Returns the result resource.
  */ 
-function do_mysql_query($sql_query)
+function do_mysql_query($sql)
 {
 	global $mysql_link;
 	static $last_query_time = 0;
@@ -259,15 +275,15 @@ function do_mysql_query($sql_query)
 		if (false === mysql_query("select 1", $mysql_link))
 			connect_global_mysql();
 
-	do_append_mysql_comment($sql_query);
+	do_append_mysql_comment($sql);
 	
-	print_debug_message("About to run the following MySQL query:\n\t$sql_query\n");
+	print_debug_message("About to run the following MySQL query:\n\t$sql\n");
 	$start_time = time();
 	
-	$result = mysql_query($sql_query, $mysql_link);
+	$result = mysql_query($sql, $mysql_link);
 	
 	if (false === $result) 
-		exiterror_mysqlquery(mysql_errno($mysql_link), mysql_error($mysql_link), $sql_query);
+		exiterror_mysqlquery(mysql_errno($mysql_link), mysql_error($mysql_link), $sql);
 	
 	$last_query_time = time();
 			
@@ -286,7 +302,8 @@ function do_mysql_query($sql_query)
  * The mysql $query should be of the form "select [something] FROM [table] [other conditions]" 
  * -- that is, it MUST NOT contain "into outfile $filename", and the FROM must be in capitals. 
  * 
- * The output file is specified by $filename - this must be a full absolute path.
+ * The output file is specified by $filename - this must be a full ABSOLUTE path.
+ * (Use realpath() to make sure of this!)
  * 
  * Typically used to create a dump file (new format post CWB2.2.101)
  * for input to CQP e.g. in the creation of a postprocessed query. 
@@ -311,7 +328,7 @@ function do_mysql_outfile_query($query, $filename)
 		
 		if ($replaced != 1)
 			exiterror_mysqlquery('no_number',
-				'A query was prepared which does not contain FROM, or contains multiple instances of FROM.' 
+				'An outfile query was requested which does not contain FROM, or contains multiple instances of FROM.' 
 				, $query);
 		
 		print_debug_message("About to run the following MySQL query:\n\n$query\n");
@@ -327,6 +344,7 @@ function do_mysql_outfile_query($query, $filename)
 	else 
 	{
 		/* we cannot use INTO OUTFILE, so run the query, and write to file ourselves */
+		
 		print_debug_message("About to run the following MySQL query:\n\n$query\n");
 		$result = mysql_unbuffered_query($query, $mysql_link); /* avoid memory overhead for large result sets */
 		if ($result == false)
@@ -334,7 +352,7 @@ function do_mysql_outfile_query($query, $filename)
 		print_debug_message("The query ran successfully.\n");
 	
 		if (!($fh = fopen($filename, 'w'))) 
-			exiterror_general("Could not open file for write ( $filename )", __FILE__, __LINE__);
+			exiterror("MySQL outfile query: Could not open file for write ( $filename )");
 		
 		$rowcount = 0;
 		
@@ -343,6 +361,8 @@ function do_mysql_outfile_query($query, $filename)
 			fputs($fh, implode("\t", $row) . "\n");
 			$rowcount++;
 		}
+		
+		mysql_free_result($result);
 		
 		fclose($fh);
 		
@@ -382,6 +402,8 @@ function do_mysql_infile_query($table, $filename, $no_escapes = true)
 	{
 		/* the normal sensible way */
 		
+		$filename = mysql_real_escape_string(realpath($filename)); /* because "infile" requries an absolute path when non-LOCAL */
+		
 		$sql = "{$Config->mysql_LOAD_DATA_INFILE_command} '$filename' INTO TABLE `$table`";
 		if ($no_escapes)
 			$sql .= ' FIELDS ESCAPED BY \'\'';
@@ -419,13 +441,13 @@ function do_mysql_infile_query($table, $filename, $no_escapes = true)
 		$source = fopen($filename, 'r');
 		
 		/* loop across lines in input file */
-		while (false !== ($line = fgets($source)));
+		while (false !== ($line = fgets($source)))
 		{
 			/* necessary for security, but might possibly lead to data being
 			 * escaped where we don't want it; if so, tant pis */
 			$line = mysql_real_escape_string($line);
 			$line = rtrim($line, "\r\n");
-			$data = explode($line, "\t");
+			$data = explode("\t", $line);
 
 			
 			$blob1 = $blob2 = '';
@@ -521,26 +543,13 @@ function database_enable_keys($table)
  */
 function deduce_corpus_mysql_collation($corpus_info)
 {
-	/* TODO this encapsulates collation setup, so when we use more than just these 2,
+	/* this encapsulates collation setup, so when we use more than just these 2,
 	 * we can simply set matters up here, and everything else should cascade.
 	 */
 	return $corpus_info->uses_case_sensitivity ? 'utf8_bin' : 'utf8_general_ci' ;
 } 
 
 
-
-
-// TODO this could be a method on the config object
-/**
- * Returns an integer containing the RAM limit to be passed to CWB programs that
- * allow a RAM limit to be set - note, the flag (-M or whatever) is not returned,
- * just the number of megabytes as an integer.
- */
-function get_cwb_memory_limit()
-{
-	global $Config;
-	return ((php_sapi_name() == 'cli') ? $Config->cwb_max_ram_usage_cli : $Config->cwb_max_ram_usage);
-}
 
 
 
@@ -599,12 +608,6 @@ function regex_add_anchors($s)
  */
 function escape_html($string)
 {
-// 	$string = str_replace('&', '&amp;', $string);
-// 	$string = str_replace('<', '&lt;', $string);
-// 	$string = str_replace('>', '&gt;', $string);
-// 	$string = str_replace('"', '&quot;', $string);
-
-// 	return preg_replace('/&amp;(\#?\w+;)/', '&$1', $string);
 	return htmlspecialchars($string, ENT_COMPAT, 'UTF-8', false);
 } 
 
@@ -623,15 +626,17 @@ function escape_html($string)
  * A maximum length can also be enforced if the second parameter
  * is set to greater than 0.
  */
-function cqpweb_handle_enforce($string, $length = -1)
+function cqpweb_handle_enforce($string, $maxlength = -1)
 {
 	$handle = preg_replace('/[^a-zA-Z0-9_]/', '', $string);
 	if (empty($handle))
 		$handle = '__HANDLE';
-	return ($length < 1 ? $handle : substr($handle, 0, $length) );
+	return ($maxlength < 1 ? $handle : substr($handle, 0, $maxlength) );
 }
 
 /**
+ * Checks a string for validity as a handle.
+ * 
  * Returns true iff the argument string is OK as a handle,
  * that is, iff there are no non-word characters (i.e. no \W)
  * in the string and it is not empty.
@@ -639,13 +644,13 @@ function cqpweb_handle_enforce($string, $length = -1)
  * A maximum length can also be checked if the second parameter
  * is set to greater than 0.
  */
-function cqpweb_handle_check($string, $length = -1)
+function cqpweb_handle_check($string, $maxlength = -1)
 {
 	return (
 			is_string($string)
 			&&   $string !== ''
-			&&   0 >= preg_match('/\W/', $string) 
-			&&   ( $length < 1 || strlen($string) <= $length )
+			&&   1 > preg_match('/\W/', $string) 
+			&&   ( $maxlength < 1 || strlen($string) <= $maxlength )
 			);
 }
 
@@ -744,9 +749,8 @@ function url_absolutify($u, $special_subdir = NULL)
 	global $Config;
 	global $Corpus;
 	
-	/* outside a corpus, extract the immeidate containing directory
-	 * from REQUEST_URI (e.g. 'adm') */
-	if (empty($special_subdir) && !$Corpus->specified)
+	/* outside a corpus, extract the immediate containing directory from REQUEST_URI (e.g. 'adm') */
+	if (empty($special_subdir) && (empty($Corpus) || !$Corpus->specified) )
 	{
 		preg_match('|\A.*/(\w+)/[^/]*\z|', $_SERVER['REQUEST_URI'], $m);
 		$special_subdir = $m[1];
@@ -778,7 +782,8 @@ function url_absolutify($u, $special_subdir = NULL)
 					? $Corpus->name  
 					: $special_subdir
 				)
-				. '/' . $u;
+				. '/' . $u
+		;
 		
 		/* attempt to resolve ../ if present */
 		$url = preg_replace('|/[^\./]+/\.\./|', '/', $url);
@@ -872,17 +877,24 @@ function url_printget($changes = "Nope!")
 function clear_http_parameter($key)
 {
 	unset($_GET[$key], $_POST[$key]);
-	$_SERVER['QUERY_STRING'] 
-		= preg_replace_callback("/([&?])$key=[^&]*(&?)/", 
-			function ($m) 
-			{
-				if ($m[1] == '?')
-					return '?';
-				else
-					return ( empty($m[2]) ? '' : '&' );
-			},
-			$_SERVER['QUERY_STRING']
-		);
+	do 
+	{
+		$count = 0;
+		$_SERVER['QUERY_STRING'] 
+			= preg_replace_callback(
+				"/([&?])$key=[^&]*(&?)/", 
+				function ($m) 
+				{
+					if ($m[1] == '?')
+						return '?';
+					else
+						return ( empty($m[2]) ? '' : '&' );
+				},
+				$_SERVER['QUERY_STRING'],
+				-1,
+				$count
+			);
+	} while ($count > 0);
 }
 
 
@@ -967,7 +979,12 @@ function prepare_per_page($pp)
 
 	default:
 		if (is_numeric($pp))
+		{
 			settype($pp, 'integer');
+			/* must be positive */
+			if (1 > $pp)
+				$pp = $Config->default_per_page;
+		}	
 		else
 			$pp = $Config->default_per_page;
 			/* this also catches the case where the parameter is NULL or an unset var */
@@ -1117,270 +1134,54 @@ function dump_mysql_result($result)
 
 
 
-//TODO move to html-lib
-function coming_soon_page()
-{
-	global $Config;
-	echo print_html_header('unfinished function!', $Config->css_path);
-	coming_soon_finish_page();
-}
-
-
-//TODO move to html-lib
-function coming_soon_finish_page()
-{
-	?>
-	<table width="100%" class="concordtable">
-		<tr>
-			<th class="concordtable">Unfinished function!</th>
-		</tr>
-		<tr>
-			<td class="concordgeneral">
-				&nbsp;<br/>
-				<b>We are sorry, but that part of CQPweb has not been built yet.</b>
-				<br/>&nbsp;
-			</td>
-		</tr>
-	</table>
-	
-	</body>
-	</html>
-	<?php
-}
-
-
-
-/**
- * Runs a script in perl and returns up to 10Kb of text written to STDOUT
- * by that perl script, or an empty string if Perl writes nothing to STDOUT.
- * 
- * It reads STDERR if nothing is written to STDOUT.
- * 
- * This function is not currently used.
- * 
- * TODO: compare to what is in ceql.inc.php and see which, if eitehr, should be deleted.
- * 
- * script_path	   path to the script, relative to current PHP script (string)
- * arguments	   anything to add after the script name (string)
- * select_maxtime  time to wait for Perl to respond
- * 
- */
-function perl_interface($script_path, $arguments, $select_maxtime='!')
-{
-	global $Config;
-	
-	if (!is_int($select_maxtime))
-		$select_maxtime = 10;
-	
-	if (! file_exists($script_path) )
-		return "ERROR: perl script could not be found.";
-		
-	$call = "{$Config->path_to_perl}perl $script_path $arguments";
-	// TODO should we not use the extra include directories, if specified?
-	
-	$io_settings = array(
-		0 => array("pipe", "r"), // stdin 
-		1 => array("pipe", "w"), // stdout 
-		2 => array("pipe", "w")  // stderr 
-	); 
-	
-	$handles = false;
-	
-	$process = proc_open($call, $io_settings, $handles);
-
-	if (is_resource($process)) 
-	{
-		/* returns content-from-stdout, if stdout is empty, returns content-from-stderr */
-		$r=array($handles[1]); $w=NULL; $e=NULL;
-		if (stream_select($r, $w, $e, $select_maxtime) > 0 )
-			$output = fread($handles[1], 10240);
-		else
-		{
-			$r=array($handles[2]); $w=NULL; $e=NULL;
-			if (stream_select($r, $w, $e, $select_maxtime) > 0 )
-				$output = fread($handles[2], 10240);
-			else
-				$output = "";
-		}
-		fclose($handles[0]);
-		fclose($handles[1]);
-		fclose($handles[2]);
-		proc_close($process);
-		
-		return $output;
-	}
-	else
-		return "ERROR: perl interface could not be created.";
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-//TODO next 2 should move to admin-lib no?
-/**
- * Create a system message that will appear below the main "Standard Query"
- * box (and also on the hompage).
- */
-function add_system_message($header, $content)
-{
-	global $Config;
-	$sql_query = "insert into system_messages set 
-		header = '" . mysql_real_escape_string($header) . "', 
-		content = '" . mysql_real_escape_string($content) . "', 
-		message_id = '{$Config->instance_name}'";
-	/* timestamp is defaulted */
-	do_mysql_query($sql_query);
-}
-
-/**
- * Delete the system message associated with a particular message_id.
- *
- * The message_id is the user/timecode assigned to the system message when it 
- * was created.
- */
-function delete_system_message($message_id)
-{
-	$message_id = preg_replace('/\W/', '', $message_id);
-	$sql_query = "delete from system_messages where message_id = '$message_id'";
-	do_mysql_query($sql_query);
-}
-
-
-//TODO belongs in html-lib perhaps?
-/**
- * Print out the system messages in HTML, including links to delete them.
- */
-function display_system_messages()
-{
-	global $User;
-	global $Config;
-	global $Corpus;
-	
-	/* weeeeeelll, this is unfortunately complex! */
-	switch ($Config->run_location)
-	{
-	case RUN_LOCATION_ADM:
-		$execute_path = 'index.php?admFunction=execute&function=delete_system_message';
-		$after_path = urlencode("index.php?thisF=systemMessages&uT=y");
-		$rel_add = '../';
-		break;
-	case RUN_LOCATION_USR:
-		$execute_path = '../adm/index.php?admFunction=execute&function=delete_system_message';
-		$after_path = urlencode("../usr/");
-		$rel_add = '../';
-		break;
-	case RUN_LOCATION_MAINHOME:
-		$execute_path = 'adm/index.php?admFunction=execute&function=delete_system_message';
-		$after_path = urlencode("../");
-		$rel_add = '';
-		break;
-	case RUN_LOCATION_CORPUS:
-		/* we are in a corpus */
-		$execute_path = 'execute.php?function=delete_system_message';
-		$after_path = urlencode(basename($_SERVER['SCRIPT_FILENAME']));
-		$rel_add = '../';
-		break;
-	}
-	
-	$su = $User->is_admin();
-
-	$result = do_mysql_query("select * from system_messages order by timestamp desc");
-	
-	if (mysql_num_rows($result) == 0)
-		return;
-	
-	?>
-	<table class="concordtable" width="100%">
-		<tr>
-			<th colspan="<?php echo ($su ? 3 : 2) ; ?>" class="concordtable">
-				System messages 
-				<?php
-				if ($Config->rss_feed_available)
-				{
-					?>
-					<a href="<?php echo $rel_add;?>rss">
-						<img src="<?php echo $rel_add;?>css/img/feed-icon-14x14.png" />
-					</a> 
-					<?php	
-				}
-				?> 
-			</th>
-		</tr>
-	<?php
-	
-	
-	while ( ($r = mysql_fetch_object($result)) !== false)
-	{
-		?>
-		<tr>
-			<td rowspan="2" class="concordgrey" nowrap="nowrap">
-				<?php echo substr($r->timestamp, 0, 10); ?>
-			</td>
-			<td class="concordgeneral">
-				<strong>
-					<?php echo escape_html(stripslashes($r->header)); ?>
-				</strong>
-			</td>
-		<?php
-		if ($su)
-		{
-			echo '
-			<td rowspan="2" class="concordgeneral" nowrap="nowrap" align="center">
-				<a class="menuItem" onmouseover="return escape(\'Delete this system message\')"
-				href="'. $execute_path . '&args='
-				, $r->message_id ,
-				'&locationAfter=' , $after_path , '&uT=y">
-					[x]
-				</a>
-			</td>';
-		}
-		?>
-		</tr>
-		<tr>
-			<td class="concordgeneral">
-				<?php
-				/* Sanitise, then add br's, then restore whitelisted links ... */
-				echo preg_replace(	'|&lt;a\s+href=&quot;(.*?)&quot;\s*&gt;(.*?)&lt;/a&gt;|', 
-									'<a href="$1">$2</a>', 
-									str_replace("\n", '<br/>', escape_html(stripslashes($r->content))));
-				?>
-
-			</td>
-		</tr>			
-		<?php
-	}
-	echo '</table>';
-}
 
 
 /**
  * Convenience function to delete a specified directory, plus everything in it.
  */
 function recursive_delete_directory($path)
-{
+{		
 	if (!is_dir($path))
 		return;
-
+	
 	foreach(scandir($path) as $f)
 	{
+		/* delete directories; unlink regualr files and symlinks. */
 		if ($f == '.' || $f == '..')
 			;
-		else if (is_dir("$path/$f"))
+		else if (is_dir("$path/$f") && !is_link("$path/$f"))
 			recursive_delete_directory("$path/$f");
 		else
 			unlink("$path/$f");
 	}
 	rmdir($path);
 }
+
+/**
+ * Convenience function to count the size of all files in a directory, recursively.
+ * 
+ * @return int  The size in bytes.
+ */
+function recursive_sizeof_directory($path)
+{
+	if (!is_dir($path))
+		return 0;
+
+	$size = 0;
+	
+	foreach(scandir($path) as $f)
+	{
+		if ($f == '.' || $f == '..')
+			;
+		else if (is_dir("$path/$f"))
+			$size += recursive_sizeof_directory("$path/$f");
+		else
+			$size += filesize("$path/$f");
+	}
+	
+	return $size;
+}
+
 
 /**
  * Convenience function to recursively copy a directory.
@@ -1558,5 +1359,72 @@ function list_plugins_of_type($type)
 			if ($p->type & $type)
 				$result[] = $p;
 	return $result;
+}
+
+
+
+/*
+ * REFLECTION functions. This is not reflection in the technical sense, 
+ * but it's similar, so we can use the name to make these funcitons distinctive.
+ * 
+ * Each of these funcs returns some blob of info about the composition of the system
+ * - e.g. a list of required code files from some part of the system.
+ * 
+ * The functions can be used by any part of CQPweb that needs to inspect its own content
+ * for whatever reason. 
+ */
+
+/**
+ * Return array of builtin javascript files in the ../jsc directory
+ * (to distinguish such code files from any manually-added javascript files
+ * which might be used in XML visualisation; or in future, perhaps, for other purposes). 
+ */
+function get_jsc_reflection_list()
+{
+	return array (
+			'always.js',          
+			'analyse-md.js',      
+			'attribute-embiggen.js',  
+			'captcha.js',             
+			'colloc-options.js',
+			'corpus-name-highlight.js',
+			'cword.js',           
+			'distTableSort.js',   
+			'jquery.js',              
+			'metadata-embiggen.js',   
+			'misc.js',
+			'modal.js',
+			'queryhome.js',       
+			'textmeta.js',            
+			'user-quicksearch.js',
+			'wz_tooltip.js',
+		);
+	/* note the above needs to be updated whenever anything in the ../jsc code is reorganised / extended. */
+}
+
+/**
+ * Return array of .css files in the ../css directory that have filenames 
+ * that were created by CQPweb rather than being manually added by the admin.
+ */
+function get_css_reflection_list()
+{
+	return array (
+			'CQPweb.css',
+			'CQPweb-aqua.css',
+			'CQPweb-brown.css',
+			'CQPweb-darkblue.css',
+			'CQPweb-dusk.css',
+			'CQPweb-gold.css',
+			'CQPweb-green.css',
+			'CQPweb-lime.css',
+			'CQPweb-neon.css',
+			'CQPweb-purple.css',
+			'CQPweb-red.css',
+			'CQPweb-rose.css',
+			'CQPweb-teal.css',
+			'CQPweb-yellow.css',
+			'CQPweb-user-monochrome.css',
+		);
+	/* note the above needs to be updated whenever new builtin colours are added. */
 }
 

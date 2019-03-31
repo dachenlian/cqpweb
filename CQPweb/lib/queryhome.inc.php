@@ -41,13 +41,9 @@
  */
 
 
-/* ------------ *
- * BEGIN SCRIPT *
- * ------------ */
-
-// TODO we have to use require_once here because this file is required by some of the "actions" in subcorpus-admin;
-// once that no-good very-bad architecture is fixed in subcorpus-admin, then these should be require not require_once
-//TODO to my knowledge this is now fixed, so it has been swirtched ot just require.
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
 
 require('../lib/environment.inc.php');
 
@@ -68,12 +64,20 @@ require('../lib/concordance-lib.inc.php');
 require('../lib/colloc-lib.inc.php');
 require('../lib/xml.inc.php');
 require('../lib/multivariate.inc.php');
+require('../lib/lgcurve-lib.inc.php');
 
 /* especially, include the functions for each type of query */
 require('../lib/indexforms-queries.inc.php');
 require('../lib/indexforms-saved.inc.php');
 require('../lib/indexforms-subcorpus.inc.php');
 require('../lib/indexforms-others.inc.php');
+
+
+/* ------------ *
+ * BEGIN SCRIPT *
+ * ------------ */
+
+
 
 
 /* in the case of the index page, we can allow there not to be any arguments, and supply a default; so don't check for presence of uT=y */
@@ -137,6 +141,8 @@ echo print_menurow_index('lookup', 'Word lookup');
 echo print_menurow_index('freqList', 'Frequency lists');
 echo print_menurow_index('keywords', 'Keywords');
 echo print_menurow_index('analyseCorpus', 'Analyse corpus');
+if ($Corpus->access_level == PRIVILEGE_TYPE_CORPUS_FULL)
+	echo print_menurow_index('export', 'Export corpus');
 
 echo print_menurow_heading('Saved query data');
 echo print_menurow_index('history', 'Query history');
@@ -165,7 +171,7 @@ if (empty($Corpus->external_url))
 	echo '<tr><td class="concordgeneral"><a class="menuCurrentItem"><em>No corpus documentation available</em></a></tr></td>';
 else
 {
-	echo '<tr><td class="concordgeneral"><a class="menuItem" href="'
+	echo '<tr><td class="concordgeneral"><a target="_blank" class="menuItem" href="'
 		, $Corpus->external_url , '" onmouseover="return escape(\'Info on ' , addcslashes($Corpus->title, '\'')
 		, ' on the web\')">Corpus documentation</a></td></tr>'
 		;
@@ -202,12 +208,15 @@ if ($User->is_admin())
 	
 	echo print_menurow_index('corpusSettings', 'Corpus settings');
 	echo print_menurow_index('userAccess', 'Manage access');
-	echo print_menurow_index('manageMetadata', 'Manage metadata');
+	echo print_menurow_index('manageMetadata', 'Manage text metadata');
 	echo print_menurow_index('manageCategories', 'Manage text categories');
 	echo print_menurow_index('manageXml', 'Manage corpus XML');
 	echo print_menurow_index('manageAnnotation', 'Manage annotation');
+	echo print_menurow_index('manageAlignment', 'Manage parallel alignment');
 	echo print_menurow_index('manageFreqLists', 'Manage frequency lists');
 	echo print_menurow_index('manageVisualisation', 'Manage visualisations');
+	if (! $Config->hide_experimental_features)
+		echo print_menurow_index('addToCorpus', 'Add corpus data');
 	echo print_menurow_index('cachedQueries', 'Cached queries');
 	echo print_menurow_index('cachedDatabases', 'Cached databases');
 	echo print_menurow_index('cachedFrequencyLists', 'Cached frequency lists');
@@ -308,6 +317,17 @@ case 'analyseCorpus':
 	printquery_analysecorpus();
 	$helplink = 'hello';
 	break;
+	
+case 'lgcurve': 
+// TODO, note this is an unfinished UI issue... lgcurve should prob be wihtin Analyse Corpus but currently rhere's just a link. 
+	printquery_lgcurve();
+	$helplink = 'hello';
+	break;
+
+case 'export':
+	printquery_export();
+	$helplink = 'hello';
+	break;
 
 case 'corpusMetadata':
 	printquery_corpusmetadata();
@@ -344,6 +364,11 @@ case 'manageAnnotation':
 	$helplink = 'hello';
 	break;
 
+case 'manageAlignment':
+	printquery_managealignment();
+	$helplink = 'hello';
+	break;
+
 case 'manageFreqLists':
 	printquery_managefreqlists();
 	$helplink = 'hello';
@@ -352,6 +377,11 @@ case 'manageFreqLists':
 case 'manageVisualisation':
 	printquery_visualisation();
 	printquery_xmlvisualisation();
+	$helplink = 'hello';
+	break;
+	
+case 'addToCorpus':
+	printquery_addtocorpus();
 	$helplink = 'hello';
 	break;
 

@@ -28,7 +28,7 @@
  * error-actions before shutting down CQPweb.
  * 
  * Functions outside the module should always call one of the functions
- * that builds up a message template, e.g. exiterror_general.
+ * that builds up a message template, e.g. exiterror(), which is the usual choice.
  * 
  * These functions in turn call the ones that do formatting etc.
  */
@@ -229,27 +229,29 @@ function exiterror_login($errormessage)
 	exiterror_beginpage("Unsuccessful login!", "Your login was not successful.");
 	exiterror_printlines($msg);
 	exiterror_endpage();
+	
+	// TODO this should be a proper separate page, not just an error.
 }
 
 function exiterror_bad_url()
-{
-	$msg = array("We're sorry, but CQPweb could not read your full URL.");
-	$msg[] = "This sometimes happens when you have clicked on a link in an email or a document, "
-			."and the link has been mis-formatted by your email or document reader.";
-	
+{	
 	exiterror_beginpage();
-	exiterror_printlines($msg);
+	exiterror_printlines(array(
+			"We're sorry, but CQPweb could not read your full URL.",
+			"This sometimes happens when you have clicked on a link in an email or a document, "
+			."and the link has been mis-formatted by your email or document reader."
+	));
 	exiterror_endpage(true);
 }
 
 function exiterror_cacheoverload()
 {
-	$msg = array("CRITICAL ERROR - CACHE OVERLOAD!");
-	$msg[] = "CQPweb tried to clear cache space but failed!";
-	$msg[] = "Please report this error to the system administrator.";
-	
 	exiterror_beginpage();
-	exiterror_printlines($msg);
+	exiterror_printlines(array(
+			"CRITICAL ERROR - CACHE OVERLOAD!",
+			"CQPweb tried to clear cache space but failed!",
+			"Please report this error to the system administrator."
+	));
 	exiterror_endpage();
 }
 
@@ -257,12 +259,12 @@ function exiterror_cacheoverload()
 /** used for freqtable overloads too */
 function exiterror_dboverload()
 {
-	$msg = array("CRITICAL ERROR - DATABASE CACHE OVERLOAD!");
-	$msg[] = "CQPweb tried to clear database cache space but failed!";
-	$msg[] = "Please report this error to the system administrator.";
-	
 	exiterror_beginpage();
-	exiterror_printlines($msg);
+	exiterror_printlines(array(
+			"CRITICAL ERROR - DATABASE CACHE OVERLOAD!",
+			"CQPweb tried to clear database cache space but failed!",
+			"Please report this error to the system administrator."
+	));
 	exiterror_endpage();
 }
 
@@ -287,7 +289,7 @@ function exiterror_mysqlquery($errornumber, $errormessage, $origquery=NULL, $scr
 {
 	global $User;
 	
-	$msg = array("A mySQL query did not run successfully!");
+	$msg = array("A MySQL query did not run successfully!");
 	if (!empty($origquery) &&  (empty($User) || $User->is_admin()) )
 		$msg[] = "Original query: \n\n$origquery\n\n";
 	$msg[] = "Error # $errornumber: $errormessage ";

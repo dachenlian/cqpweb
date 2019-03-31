@@ -29,8 +29,10 @@
 
 
 
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
 
-/* initialise variables from settings files  */
 require('../lib/environment.inc.php');
 
 /* include function library files */
@@ -40,8 +42,8 @@ require('../lib/user-lib.inc.php');
 require('../lib/exiterror.inc.php');
 require('../lib/concordance-lib.inc.php');
 require('../lib/metadata.inc.php');
-require('../lib/cwb.inc.php');
 require('../lib/cqp.inc.php');
+require('../lib/xml.inc.php');
 
 
 /*
@@ -124,11 +126,6 @@ if (PRIVILEGE_TYPE_CORPUS_RESTRICTED >= $Corpus->access_level)
 /* this script takes all of the GET parameters from concrdance.php */
 /* but only qname is absolutely critical, the rest just get passed */
 $qname = safe_qname_from_get();
-	
-/* all scripts that pass on $_GET['theData'] have to do this, to stop arg passing adding slashes */
-if (isset($_GET['theData']))
-	$_GET['theData'] = prepare_query_string($_GET['theData']);
-// TODO arguably, the above should not exist.
 
 
 /* parameters unique to this script */
@@ -172,6 +169,24 @@ if ($context_size < $Corpus->initial_extended_context)
 
 
 
+/* do we need to show the aligned region for each match? */
+$show_align = false;
+$align_info = check_alignment_permissions(list_corpus_alignments($Corpus->name));
+/* again note override: we do not allow BOTH translation viz AND parallel corpus viz */
+if (isset($_GET['showAlign'])&& ! $Corpus->visualise_translate_in_context)
+{
+	if ( isset($align_info[$_GET['showAlign']]) )
+	{
+		$show_align = true;
+		$alignment_att_to_show = $_GET['showAlign'];
+		$alignment_corpus_info = get_corpus_info($alignment_att_to_show);
+		$aligned_corpus_has_primary_att 
+			= array_key_exists($Corpus->primary_annotation, get_corpus_annotations($alignment_att_to_show));
+	}
+}
+
+
+
 /* the alt view parameter */
 
 $use_alt_word_att = false;
@@ -192,6 +207,9 @@ else
 //	$alt_word_desc = get_corpus_annotation_info()[$Corpus->alt_context_word_att]->description;
  	$fullwidth_colspan = 3;
 }
+if (!empty($align_info))
+	$fullwidth_colspan++;
+	
 
 /* the alt view button */
 
@@ -207,15 +225,24 @@ else
 }
 
 
-$primary_tag_handle = $Corpus->primary_annotation;
+/* we can now move on to getting CQP ready for us. */
 
 $cqp->execute("set Context $context_size words");
-
 
 if ($Corpus->visualise_gloss_in_context)
 	$cqp->execute("show +word +{$Corpus->visualise_gloss_annotation} ");
 else
-	$cqp->execute("show +word " . (empty($primary_tag_handle) ? '' : "+$primary_tag_handle "));
+	$cqp->execute("show +word " . (empty($Corpus->primary_annotation) ? '' : "+{$Corpus->primary_annotation} "));
+
+/* what inline s-attributes to show? (xml elements) */
+$xml_tags_to_show = xml_visualisation_s_atts_to_show('context');
+if ( ! empty($xml_tags_to_show) )
+	$cqp->execute('show +' . implode(' +', $xml_tags_to_show));
+
+/* do we need to show an a-attribute? */
+if ($show_align)
+	$cqp->execute('show +' . $alignment_att_to_show);
+
 $cqp->execute("set PrintStructures \"text_id\""); 
 $cqp->execute("set LeftKWICDelim '--%%%--'");
 $cqp->execute("set RightKWICDelim '--%%%--'");
@@ -223,6 +250,9 @@ $cqp->execute("set RightKWICDelim '--%%%--'");
 
 /* get an array containing the lines of the query to show this time */
 $kwic = $cqp->execute("cat $qname $batch $batch");
+/* the only line to show is at index 0; if we asked for alignemnt, it's at index 1. */
+
+
 
 
 if ($use_alt_word_att)
@@ -232,22 +262,28 @@ if ($use_alt_word_att)
 	/* first, reset the "show" by turning off everything turned on above */
 	if ($Corpus->visualise_gloss_in_context)
 		$cqp->execute("show -{$Corpus->visualise_gloss_annotation} ");
-	if (! empty($primary_tag_handle))
-		$cqp->execute("show -$primary_tag_handle ");
+	if (! empty($Corpus->primary_annotation))
+		$cqp->execute("show -{$Corpus->primary_annotation} ");
+	if ( ! empty($xml_tags_to_show) )
+		$cqp->execute('show -' . implode(' -', $xml_tags_to_show));
+	if ($show_align)
+		$cqp->execute('show -' . $alignment_att_to_show);
 	$cqp->execute("show -word +{$Corpus->alt_context_word_att}");
 	
 	$alt_kwic = $cqp->execute("cat $qname $batch $batch");
 
 	/* now, put alternative words in arrays that have the same indexes as the main kwic which we will get later on. */
 	list ($alt_lc_s, $alt_node_s, $alt_rc_s) = preg_split("/--%%%--/", preg_replace("/\A\s*\d+: <text_id \w+>:/", '', $alt_kwic[0]));
-	$alt_lc = explode(' ', trim($alt_lc_s));
-	$alt_rc = explode(' ', trim($alt_rc_s));
+	$alt_lc   = explode(' ', trim($alt_lc_s));
+	$alt_rc   = explode(' ', trim($alt_rc_s));
 	$alt_node = explode(' ', trim($alt_node_s));
+	/* note, no XML in this case! so it's much simpler than the line-breaker regex that gets*/
 }
 
 
 
-/* process the single result -- code largely filched from print_concordance_line() */
+/* process the single result -- code largely filched from print_concordance_line()
+ * but has diverged from it in some details. */
 
 /* extract the text_id and delete that first bit of the line */
 preg_match("/\A\s*\d+: <text_id (\w+)>:/", $kwic[0], $m);
@@ -255,97 +291,174 @@ $text_id = $m[1];
 $cqp_line = preg_replace("/\A\s*\d+: <text_id \w+>:/", '', $kwic[0]);
 
 /* divide up the CQP line */
-list($kwic_lc, $kwic_match, $kwic_rc) = preg_split("/--%%%--/", $cqp_line);	
+list($kwic_lc, $kwic_node, $kwic_rc) = preg_split("/--%%%--/", $cqp_line);	
 
-/* just in case of unwanted spaces (there will deffo be some on the left) ... */
-$kwic_rc = trim($kwic_rc);
-$kwic_lc = trim($kwic_lc);
-$kwic_match = trim($kwic_match);
 
-/* create arrays of words from the incoming variables: split at space */	
-$lc = explode(' ', $kwic_lc);
-$rc = explode(' ', $kwic_rc);
-$node = explode(' ', $kwic_match);
+/* create some variables for repeated use within lc / rc */
 
-/* how many words in each array? */
-$lcCount = count($lc);
-$rcCount = count($rc);
-$nodeCount = count($node);
-
-//$word_extraction_pattern = (empty($primary_tag_handle) ? false : '/\A(.*)\/(.*?)\z/');
-
-$line_breaker = ( $Corpus->main_script_is_r2l 
-							? "</bdo>\n<br/>&nbsp;<br/>\n<bdo dir=\"rtl\">" 
-							: "\n<br/>&nbsp;<br/>\n" 
-							);
-
-/* left context string */
-$lc_string = '';
-for ($i = 0; $i < $lcCount; $i++) 
-{
-	list($word, $tag) = extract_cqp_word_and_tag($lc[$i]);
-	
-	if ($use_alt_word_att)
-		$word = escape_html($alt_lc[$i]);
-
-	if ($i == 0 && preg_match('/\A[.,;:?\-!"\x{0964}\x{0965}]\Z/u', $word))
-		/* don't show the first word of left context if it's just punctuation */
-		continue;
-
-	$lc_string .= $word . ( $show_tags ? bdo_tags_on_tag($tag) : '' ) . ' ';
-
-	/* break line if this word is an end of sentence punctuation */
-	if (preg_match('/\A[.?!\x{0964}]\Z/u', $word) || $word == '...'  )
-		$lc_string .= $line_breaker;
-}
-
-/* node string */
-$node_string = '';
-for ($i = 0; $i < $nodeCount; $i++) 
-{
-	list($word, $tag) = extract_cqp_word_and_tag($node[$i]);
-	
-	if ($use_alt_word_att)
-		$word = escape_html($alt_node[$i]);
-
-	$node_string .= $word . ( $show_tags ? bdo_tags_on_tag($tag) : '' ) . ' ';
-
-	/* break line if this word is an end of sentence punctuation */
-	if (preg_match('/\A[.?!\x{0964}]\Z/u', $word) || $word == '...'  )
-		$node_string .= $line_breaker;
-}
-
-/* rc string */
-$rc_string = "";
-for ($i = 0; $i < $rcCount; $i++) 
-{
-	list($word, $tag) = extract_cqp_word_and_tag($rc[$i]);
-
-	if ($use_alt_word_att)
-		$word = escape_html($alt_rc[$i]);
-	
-	$rc_string .= $word . ( $show_tags ? bdo_tags_on_tag($tag) : '' ) . ' ';
-
-	/* break line if this word is an end of sentence punctuation */
-	// TODO
-	// this is a BAD regex (And see same regex in $lc above, as well as the first-word regex.)
-	// potentially better version? need to test it, though
-	//	if (preg_match('/\A\p{P}\Z/u', $word) || $word == '...' )
-	if (preg_match('/\A[.?!\x{0964}]\Z/u', $word) || $word == '...' )
-		$rc_string .= $line_breaker;
-}
 
 /* tags for Arabic, etc.: */
 $bdo_tag1 = ($Corpus->main_script_is_r2l ? '<bdo dir="rtl">' : '');
 $bdo_tag2 = ($Corpus->main_script_is_r2l ? '</bdo>' : '');
 
 
+/* line break (fallback visualisation) is likewise contingent on directionality. */
+$line_breaker = ( 
+			$Corpus->main_script_is_r2l 
+			? "</bdo>\n<br/>&nbsp;<br/>\n<bdo dir=\"rtl\">" 
+			: "\n<br/>&nbsp;<br/>\n" 
+		);
+
+$line_breaker_regex = '/\A([.?!\x{0964}]|\.\.\.)\Z/u';
+// TODO: would the following be a better line-breaker regex? (For each of the three times it is used.)
+// testing would be needed before implementation
+// '/\A(\p{P}|...)\Z/u'
+
+/* create arrays of words from the incoming variables: split at space, but extract XML for rendering too;
+ * remember to trim before using this regex, in case of unwanted spaces (there will deffo be some on the left) ... */
+/* if (false) {$word_extract_regex = '|((<\S+?( \S+?)?>)*)([^ <]+)((</\S+?>)*) ?|';}*/
+$word_extract_regex = CQP_INTERFACE_WORD_REGEX;
+/* above regex puts tokens in $m[4]; xml-tags-before in $m[1]; xml-tags-after in $m[5] . */
+// TODO, tidy up the above. No need for the var, as we have the const.
+
+/* we're also going to need the xml visualisation data structure to render boundaries to HTML */
+$xml_viz_index = index_xml_visualisation_list(get_all_xml_visualisations($Corpus->name, false, true, false));
+
+
+/* 
+ * OK, we can now do lc, rc and node. For each, use the regex above for splitting; then build up the string. 
+ */
+
+
+/* left context string */
+preg_match_all($word_extract_regex, trim($kwic_lc), $m, PREG_PATTERN_ORDER);
+$lc = $m[4];
+$xml_before_array = $m[1];
+$xml_after_array  = $m[5];
+$lcCount = (empty($lc[0]) ? 0 : count($lc));
+$lc_string = '';
+for ($i = 0; $i < $lcCount; $i++) 
+{
+	/* apply XML visualisations */
+	$xml_before_string = apply_xml_visualisations($xml_before_array[$i], $xml_viz_index) . ' ';
+	$xml_after_string  =  ' ' . apply_xml_visualisations($xml_after_array[$i], $xml_viz_index);
+	
+	list($word, $tag) = extract_cqp_word_and_tag($lc[$i], $Corpus->visualise_gloss_in_context, false);
+	
+	if ($use_alt_word_att)
+		$word = escape_html($alt_lc[$i]);
+
+	/* don't show the first word of left context if it's just punctuation; 
+	 * nb not the same as the line-breaker regex! */
+	if ($i == 0 && preg_match('/\A[.,;:?\-!"\x{0964}\x{0965}]\Z/u', $word))
+		continue;
+
+	$lc_string .= $xml_before_string . $word . ( $show_tags ? bdo_tags_on_tag($tag) : '' ) . $xml_after_string . ' ';
+
+	/* break line if this word is an end of sentence punctuation */
+	if ($Corpus->visualise_break_context_on_punc)
+		if (preg_match($line_breaker_regex, $word) || $word == '...'  )
+			$lc_string .= $line_breaker;
+}
+
+/* node string */
+preg_match_all($word_extract_regex, trim($kwic_node), $m, PREG_PATTERN_ORDER);
+$node = $m[4];
+$xml_before_array = $m[1];
+$xml_after_array  = $m[5];
+$nodeCount = (empty($node[0]) ? 0 : count($node));
+$node_string = '';
+for ($i = 0; $i < $nodeCount; $i++) 
+{
+	/* apply XML visualisations */
+	$xml_before_string = apply_xml_visualisations($xml_before_array[$i], $xml_viz_index) . ' ';
+	$xml_after_string  =  ' ' . apply_xml_visualisations($xml_after_array[$i], $xml_viz_index);
+	
+	list($word, $tag) = extract_cqp_word_and_tag($node[$i], $Corpus->visualise_gloss_in_context, false);
+	
+	if ($use_alt_word_att)
+		$word = escape_html($alt_node[$i]);
+
+	$node_string .= $xml_before_string . $word . ( $show_tags ? bdo_tags_on_tag($tag) : '' ) . $xml_after_string . ' ';
+
+	/* break line if this word is an end of sentence punctuation */
+	if ($Corpus->visualise_break_context_on_punc)
+		if (preg_match($line_breaker_regex, $word))
+			$node_string .= $line_breaker;
+}
+
+/* rc string */
+preg_match_all($word_extract_regex, trim($kwic_rc), $m, PREG_PATTERN_ORDER);
+$rc = $m[4];
+$xml_before_array = $m[1];
+$xml_after_array  = $m[5];
+$rcCount = (empty($rc[0]) ? 0 : count($rc));
+$rc_string = '';
+for ($i = 0; $i < $rcCount; $i++) 
+{
+	/* apply XML visualisations */
+	$xml_before_string = apply_xml_visualisations($xml_before_array[$i], $xml_viz_index) . ' ';
+	$xml_after_string  =  ' ' . apply_xml_visualisations($xml_after_array[$i], $xml_viz_index);
+	
+	list($word, $tag) = extract_cqp_word_and_tag($rc[$i], $Corpus->visualise_gloss_in_context, false);
+
+	if ($use_alt_word_att)
+		$word = escape_html($alt_rc[$i]);
+	
+	$rc_string .= $xml_before_string . $word . ( $show_tags ? bdo_tags_on_tag($tag) : '' ) . $xml_after_string . ' ';
+
+	/* break line if this word is an end of sentence punctuation (And if the punctuation workaround is enabled) */
+	if ($Corpus->visualise_break_context_on_punc)
+		if (preg_match($line_breaker_regex, $word))
+			$rc_string .= $line_breaker;
+}
+
+/* get the aligned-parallel-data string ready */
+if ($show_align)
+{
+	/* step specific to show-align mode... */
+	$kwic[1] = preg_replace("/^-->$alignment_att_to_show:\s/", '', $kwic[1]);
+	
+	preg_match_all($word_extract_regex, trim($kwic[1]), $m, PREG_PATTERN_ORDER);
+	$alx = $m[4];
+	$xml_before_array = $m[1];
+	$xml_after_array  = $m[5];
+	$alxCount = (empty($alx[0]) ? 0 : count($alx));
+	$alx_string = '';
+	for ($i = 0; $i < $alxCount; $i++) 
+	{
+		/* apply XML visualisations */
+		$xml_before_string = apply_xml_visualisations($xml_before_array[$i], $xml_viz_index) . ' ';
+		$xml_after_string  =  ' ' . apply_xml_visualisations($xml_after_array[$i], $xml_viz_index);
+		
+		list($word, $tag) = extract_cqp_word_and_tag($alx[$i], $Corpus->visualise_gloss_in_context, !$aligned_corpus_has_primary_att);
+	
+// 		if ($use_alt_word_att)
+// 			$word = escape_html($alt_rc[$i]);
+// NB TODO have not checked how aligned mode might interact w/ show-parallel
+		
+		$alx_string .= $xml_before_string . $word . ( $show_tags ? bdo_tags_on_tag($tag) : '' ) . $xml_after_string . ' ';
+	
+		/* break line if this word is an end of sentence punctuation (And if the punctuation workaround is enabled) */
+		if ($Corpus->visualise_break_context_on_punc)
+			if (preg_match($line_breaker_regex, $word))
+				$alx_string .= $line_breaker;
+	}	
+}
+
+// TODO the above is just SCREAMING for some of the repetition to be factored out (as was, in fact, done for the concordance)
+// context blobprocess()
+
 
 /*
  * and we are READY to RENDER .... !
  */
 
-echo print_html_header("{$Corpus->title} -- CQPweb query extended context", $Config->css_path);
+
+echo print_html_header("{$Corpus->title} -- CQPweb query extended context", 
+							$Config->css_path, 
+							extra_code_files_for_concord_header('context', 'js'), 
+							extra_code_files_for_concord_header('context', 'css') );
 
 
 
@@ -358,7 +471,7 @@ echo print_html_header("{$Corpus->title} -- CQPweb query extended context", $Con
 	</tr>
 	<tr>
 		<form action="redirect.php" method="get">
-			<td width="50%" align="center" class="concordgrey">
+			<td width="<?php echo ($fullwidth_colspan == 4 ? '25' : '50'); ?>%" align="center" class="concordgrey">
 				<select name="redirect">
 					<option value="fileInfo" selected="selected">
 						File info for text <?php echo $text_id; ?>
@@ -382,6 +495,15 @@ echo print_html_header("{$Corpus->title} -- CQPweb query extended context", $Con
 			array('redirect', "")
 			)); ?> 
 		</form>
+		
+		
+		
+		<?php 
+		
+		if (!empty($align_info))
+			echo print_alignment_switcher('context', $qname, $align_info, ($show_align ? $alignment_att_to_show : false));
+		
+		?>
 		
 		
 		
@@ -424,6 +546,36 @@ echo print_html_header("{$Corpus->title} -- CQPweb query extended context", $Con
 		</td>
 	</tr>
 	
+	<?php 
+	if ($show_align) 
+	{
+		/* reset the bdo tags for the new corpus. */
+		$bdo_tag1 = ($alignment_corpus_info->main_script_is_r2l ? '<bdo dir="rtl">' : '');
+		$bdo_tag2 = ($alignment_corpus_info->main_script_is_r2l ? '</bdo>' : '');
+		
+		/* trim off the alignment-line leader (As we use our own, prettier announcement -- generated below) */
+		$kwic[1] = preg_replace("/^-->$alignment_att_to_show: /", '', $kwic[1]);
+		
+		?>
+		
+		<tr>
+			<td colspan="<?php echo $fullwidth_colspan; ?>" class="concordgrey">
+				<p class="query-match-context">
+					<b>
+						Unit aligned with the location containing the node in 
+						[<em><?php echo escape_html($alignment_corpus_info->title); ?></em>]:
+					</b>
+				</p>
+				<p class="query-match-context" align="<?php echo ($alignment_corpus_info->main_script_is_r2l ? 'right' : 'left'); ?>">
+					<?php echo $bdo_tag1 , $alx_string , $bdo_tag2; ?>
+				</p>
+			</td>
+		</tr>
+		
+		<?php 
+	}
+	?>
+	
 </table>
 
 <?php
@@ -444,12 +596,8 @@ cqpweb_shutdown_environment();
 
 function bdo_tags_on_tag($tag)
 {
-	//TODO 
-	// this should be "in_context", but right now  extract_cqp_word_and_tag #
-	// only uses $Corpus->visualise_gloss_in_concordance
-	// so let's keep things consistent. 
 	global $Corpus;
 	
-	return '_<bdo dir="ltr">' . ($Corpus->visualise_gloss_in_concordance ? $tag : substr($tag, 1)) . '</bdo>';
+	return '_<bdo dir="ltr">' . ($Corpus->visualise_gloss_in_context ? $tag : substr($tag, 1)) . '</bdo>';
 }
 

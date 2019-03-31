@@ -129,21 +129,7 @@ A CEQL parser can be told to accept the following varieties of attribute:
 function get_ceql_script_for_perl($query, $case_sensitive)
 {
 	global $Corpus;
-	
-// 	$sql_query = "select primary_annotation, secondary_annotation, tertiary_annotation, 
-// 		tertiary_annotation_tablehandle, combo_annotation 
-// 		from corpus_info 
-// 		where corpus = '{$Corpus->name}'";
 		
-// 	$result = do_mysql_query($sql_query);
-	
-// 	list($name_of_primary_annotation,
-// 		$name_of_secondary_annotation,
-// 		$name_of_tertiary_annotation,
-// 		$name_of_table_of_3ary_mappings,
-// 		$name_of_combo_annotation)
-// 			= mysql_fetch_row($result);
-	
 	/* nb these extra vars are probably not qactually needed... */
 	$name_of_primary_annotation      = $Corpus->primary_annotation;
 	$name_of_secondary_annotation    = $Corpus->secondary_annotation;
@@ -258,14 +244,6 @@ function process_simple_query($query, $case_sensitive, &$ceql_errors)
 	global $Corpus;
 	global $Config;
 	
-//	global $restrictions;
-//	global $subcorpus;
-	
-	//not needed as all queries come in w/ standardised whitespace.
-	/* return as is if nothing but whitespace */
-// 	if (preg_match('/^\s*$/', $query) > 0)
-// 		return $query;
-
 	/* create the script that will be bunged to perl */
 	/* note, this function ALSO accepts an XML table, but this isn't implemented yet */
 	$script = get_ceql_script_for_perl($query, $case_sensitive);
@@ -291,14 +269,12 @@ function process_simple_query($query, $case_sensitive, &$ceql_errors)
  * STDOUT (and, if STDOUT is empty, STDERR) and places it at the referenced arguments.
  *
  * Note that $output will always be overwritten by a single string, possibly
- * empty. Iff $output is empty, $errors wil be overwritten by an array of lines
+ * empty. Iff $output is empty, $errors wil be overwritten by an equivalent string 
  * from STDERR.
  *
  * $script is actually a script, not a path to a script on disk!
  *
- * Maximum output length is currently 10240 bytes.
- * 
- * TODO this seems to duplicate perl_interface (in library.inc.php)
+ * Maximum output length is currently 10240 bytes. (For both the output and the error messages.)
  * 
  * @return bool   True = all OK, false for error.
  */
@@ -318,27 +294,30 @@ function run_perl_script($script, &$output, &$errors)
 	
 	$handles = false;
 	
-	if (is_resource($process = proc_open($cmd, $io_settings, $handles))) 
+	/* for select calls: */
+	$w = NULL; 
+	$e = NULL;
+	
+	if (is_resource($process = proc_open($cmd, $io_settings, $handles)))
 	{
 		/* write the script to perl's stdin */
 		fwrite($handles[0], $script);
 		fclose($handles[0]);
 
 		/* read output */
-		$r=array($handles[1]); $w=NULL; $e=NULL;
-		if (stream_select($r, $w, $e, 10) > 0 )
+		$r=array($handles[1]);
+		if (0 < stream_select($r, $w, $e, 10))
 			$output = fread($handles[1], 10240);
-		// TODO, possibly : should it check STDERR even when we have got output?
-		if (empty($output))
-		{
-			$r=array($handles[2]); $w=NULL; $e=NULL;
-			if (stream_select($r, $w, $e, 10) > 0 )
-				$errors = explode("\n", fread($handles[2], 10240));
-		}
+
+		/* read errors, if there are any, regardless of whether output was found or not. */
+		$r=array($handles[2]);
+		if (0 < stream_select($r, $w, $e, 10))
+			$errors = fread($handles[2], 10240);
 
 		fclose($handles[1]);
 		fclose($handles[2]);
 		proc_close($process);
+		
 		return true;
 	}
 	else

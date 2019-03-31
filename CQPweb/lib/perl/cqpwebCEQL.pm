@@ -123,7 +123,9 @@ sub lemma_pattern {
     
     my $attr = $self->GetParam("combo_attribute");
     if (defined $attr) {
-      $regexp =~ s/^"//; $regexp =~ s/"$//; # remove double quotes around regexp so it can be combined with POS constraint
+      # remove double quotes around regexp so it can be combined with POS constraint
+      $regexp =~ s/^"//; 
+      $regexp =~ s/"$//; 
       return "$attr=\"($regexp)_${tag_regexp}\"";
     }
     else {
@@ -131,7 +133,15 @@ sub lemma_pattern {
         or die "Searches of the form {.../...} are not available.\n";
       my $second_attr = $self->GetParam("simple_pos_attribute")
         or die "Searches of the form {.../...} are not available.\n";
-      return "($first_attr=$regexp & $second_attr=\"${tag_regexp}\")";
+      # return "($first_attr=$regexp & $second_attr=\"${tag_regexp}\")";
+      return "$second_attr=\"${tag_regexp}\" & $first_attr=$regexp";
+      # Note here: we are using a loophole in the CEQL internals.
+      # the  caller here adds a '%c' after the return value of this function.
+      # For the fallback that needs to apply to the secondary but not the tertiary
+      # (for consistencey with how they are treated elsewhere). So, the Secondary
+      # constraint MUST be at the end, and we can't parenthesise the two constraints.
+      # We know CEQL will not add further constraints, except perhaps a redundant
+      # Primary annotation constraint with &, so the naked & here will still work OK.
     }
   }
   else {

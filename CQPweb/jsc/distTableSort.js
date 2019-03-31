@@ -27,6 +27,7 @@
 
 function distTableSort(link, type)
 {
+	alert(type);
 	var table = link.parentNode.parentNode.parentNode;
 	var toprow = link.parentNode.parentNode;
 	
@@ -34,8 +35,9 @@ function distTableSort(link, type)
 	if (type == "freq")
 		sort_function = distTableSort_freqorder;
 	if (type == "extr")
-		sort_function = distTableSort_extrorder
+		sort_function = distTableSort_extrorder;
 
+	alert(type);
 	var newRows = new Array();
 	var index_of_toprow = -1;
 	var bottomrow;
@@ -71,18 +73,18 @@ function distTableSort(link, type)
 
 function distTableSort_freqorder(a,b)
 {
-	if (parseFloat(a.cells[4].innerHTML) < parseFloat(b.cells[4].innerHTML) ) 
+	if (parseFloat(a.cells[4].innerHTML.replace(/,/g, "")) < parseFloat(b.cells[4].innerHTML.replace(/,/g, "")) ) 
 		{ return 1; }
-	if (parseFloat(a.cells[4].innerHTML) > parseFloat(b.cells[4].innerHTML) ) 
+	if (parseFloat(a.cells[4].innerHTML.replace(/,/g, "")) > parseFloat(b.cells[4].innerHTML.replace(/,/g, "")) ) 
 		{ return -1; }
 	return 0;
 }
 
 function distTableSort_extrorder(a,b)
 {
-	if (parseFloat(a.cells[6].innerHTML) < parseFloat(b.cells[4].innerHTML) ) 
+	if (parseFloat(a.cells[6].innerHTML.replace(/,/g, "")) < parseFloat(b.cells[6].innerHTML.replace(/,/g, "")) ) 
 		{ return 1; }
-	if (parseFloat(a.cells[6].innerHTML) > parseFloat(b.cells[4].innerHTML) ) 
+	if (parseFloat(a.cells[6].innerHTML.replace(/,/g, "")) > parseFloat(b.cells[6].innerHTML.replace(/,/g, "")) ) 
 		{ return -1; }
 	return 0;
 }

@@ -21,7 +21,11 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-
+/**
+ * @file
+ * 
+ * Script for keywords data output.
+ */
 
 /*
  * note: this script emits nothing on stdout until the last minute, because it can alternatively
@@ -30,31 +34,34 @@
 
 
 
-
-/* ------------ *
- * BEGIN SCRIPT *
- * ------------ */
-
 // TODO: the left join for "comp" function may be quite slow. It is worth doing a time-test on the db
 
 
-/* initialise variables from settings files  */
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
+
 require('../lib/environment.inc.php');
 
 
 /* include function library files */
 require("../lib/library.inc.php");
-require('../lib/html-lib.inc.php');
+require("../lib/html-lib.inc.php");
 require("../lib/exiterror.inc.php");
 require("../lib/metadata.inc.php");
+require("../lib/xml.inc.php");
 require("../lib/user-lib.inc.php");
 require("../lib/subcorpus.inc.php");
 require("../lib/freqtable.inc.php");
-require('../lib/rface.inc.php');
-require("../lib/cwb.inc.php");         // needed?
+require("../lib/rface.inc.php");
 require("../lib/cqp.inc.php");
 
 
+
+
+/* ------------ *
+ * BEGIN SCRIPT *
+ * ------------ */
 
 cqpweb_startup_environment(CQPWEB_STARTUP_DONT_CONNECT_CQP);
 
@@ -601,7 +608,7 @@ switch ($statistic)
 		
 		/* to stop the main stat formula getting too complex ... */
 		$fragment_RRF    = "(($O11 / $R1) / (IF($O21 > 0, $O21, 0.5) / $R2))";
-		$fragment_CIhalf = "($Z_unit * SQRT( ($O12 / ($R1 * IF($O11 > 0, $O11, 0.5))) + ($O22 / ($R2 * IF($O11 > 0, $O11, 0.5))) ))";
+		$fragment_CIhalf = "($Z_unit * SQRT( ($O12 / ($R1 * IF($O11 > 0, $O11, 0.5))) + ($O22 / ($R2 * IF($O21 > 0, $O21, 0.5))) ))";
 
 		$sql = "select
 			{$table_name[1]}.item as item,
@@ -658,10 +665,10 @@ switch ($statistic)
 
 $result = do_mysql_query($sql);
 
-$n = mysql_num_rows($result);
+$n_words = mysql_num_rows($result);
 
 
-$next_page_exists = ( $n == $per_page ? true : false );
+$next_page_exists = ( $n_words == $per_page ? true : false );
 
 
 /* calculate the description line */
@@ -764,7 +771,7 @@ else
 	/* this is the number SHOWN on the first line; the value of $i is (relatively speaking) 1 less than this */
 	$begin_at = (($page_no - 1) * $per_page) + 1; 
 
-	for ( $i = 0 ; $i < $n ; $i++ )
+	for ( $i = 0 ; $i < $n_words ; $i++ )
 		echo "\n\t<tr>"
 			, print_keyword_line(mysql_fetch_object($result), ($begin_at + $i), $att_for_comp, $restrict_string, $corpus_tokens)
 			, "\t</tr>"

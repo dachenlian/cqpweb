@@ -48,16 +48,13 @@ include('../lib/db.inc.php');
 include('../lib/colloc-lib.inc.php');
 include('../lib/concordance-lib.inc.php');
 include('../lib/freqtable.inc.php');
-include('../lib/freqtable-cwb.inc.php');
 include('../lib/library.inc.php');
 include('../lib/metadata.inc.php');
 include('../lib/subcorpus.inc.php');
 include('../lib/exiterror.inc.php');
 include('../lib/user-lib.inc.php');
 include('../lib/rface.inc.php');
-include('../lib/corpus-settings.inc.php');
 include('../lib/xml.inc.php');
-include('../lib/cwb.inc.php');
 include('../lib/cqp.inc.php');
 
 
@@ -141,8 +138,9 @@ echo "Done creating frequency tables...\n\n";
 cqpweb_shutdown_environment();
 
 $end_time = @date(DATE_RSS);
-echo "
+echo <<<END_OF_MESSAGE
 
+========================================================
 Frequency-list setup for corpus $corpus is now complete.
 
    Began at: $start_time
@@ -153,7 +151,8 @@ CQPweb now terminates.
 ========================================================
 
 
-";
+
+END_OF_MESSAGE;
 
 /*
  * END OF SCRIPT

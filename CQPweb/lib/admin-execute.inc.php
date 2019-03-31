@@ -26,8 +26,8 @@
  * 
  * This file contains a chunk of script which is included at the start of the Adminhome program.
  * 
- * What it does is as follows: if one of a set of actions has been requested, it calls the execute.php rpgoram
- * to carry out the action. It then redirects to a followup pager (so that the rest of the Adminhome program 
+ * What it does is as follows: if one of a set of actions has been requested, it calls the execute.php program
+ * to carry out the action. It then redirects to a followup page (so that the rest of the Adminhome program 
  * does not run - if a render of the Adminhome is needed, it takes place after the redirect).
  */
 
@@ -71,9 +71,10 @@ switch($_GET['admFunction'])
 		
 	case 'uploadFile':
 		$_GET['function'] = 'uploaded_file_to_upload_area';
-		$_GET['args'] = $_FILES['uploadedFile']['name'] . '#' . $_FILES['uploadedFile']['type'] . '#' 
-			. $_FILES['uploadedFile']['size'] . '#' . $_FILES['uploadedFile']['tmp_name'] . '#' 
-			. $_FILES['uploadedFile']['error'];
+		$_GET['args'] = 'uploadedFile';
+// 		$_GET['args'] = $_FILES['uploadedFile']['name'] . '#' . $_FILES['uploadedFile']['type'] . '#' 
+// 			. $_FILES['uploadedFile']['size'] . '#' . $_FILES['uploadedFile']['tmp_name'] . '#' 
+// 			. $_FILES['uploadedFile']['error'];
 		$_GET['locationAfter'] = 'index.php?thisF=uploadArea&uT=y';
 		require('../lib/execute.inc.php');
 		exit();
@@ -126,10 +127,10 @@ switch($_GET['admFunction'])
 
 	
 	case 'deleteCorpus':
-		if ($_GET['sureyouwantto'] !== 'yes')
+		if ( ! (isset($_GET['sureyouwantto']) && $_GET['sureyouwantto'] == 'yes') )
 		{
 			/* default back to non-function-execute-mode */
-			foreach ($_GET as $k=>$v) unset($_GET[$k]);
+			$_GET = array();
 			break;
 		}
 		$_GET['function'] = 'delete_corpus_from_cqpweb';
@@ -237,7 +238,12 @@ switch($_GET['admFunction'])
 	case 'generateDefaultPrivileges':
 		if ($_GET['corpus'] == '~~all~~')
 		{
-			$_GET['function'] = 'create_all_default_privileges';
+			$_GET['function'] = 'create_default_privileges_for_all_corpora';
+			$_GET['args'] = '';
+		}
+		else if ($_GET['corpus'] == '~~noncorpus~~')
+		{
+			$_GET['function'] = 'create_all_default_noncorpus_privileges';
 			$_GET['args'] = '';
 		}
 		else
@@ -248,12 +254,83 @@ switch($_GET['admFunction'])
 		$_GET['locationAfter'] = 'index.php?thisF=privilegeAdmin&uT=y'; 
 		require('../lib/execute.inc.php');
 		exit();
+
+
+	case 'newCorpusPrivilege':
+		/* v rudimentary check for obvious kind of error */
+		if (empty($_GET['corpus']))
+			break;
+		$_GET['corpus'] = preg_replace('/\W/', '', $_GET['corpus']);
+		$_GET['args'] = array((int)$_GET['privilegeType'], array($_GET['corpus']), $_GET['description']) ;
+		$_GET['function'] = 'add_new_privilege';
+		$_GET['locationAfter'] = 'index.php?thisF=privilegeAdmin&uT=y';
+		require('../lib/execute.inc.php');
+		exit();
+
+
+	case 'newFreqlistPrivilege':
+		$_GET['args'] = array((int)$_GET['privilegeType'], (int)$_GET['nTokens'], $_GET['description']) ;
+		$_GET['function'] = 'add_new_privilege';
+		$_GET['locationAfter'] = 'index.php?thisF=privilegeAdmin&uT=y';
+		require('../lib/execute.inc.php');
+		exit();
+
+
+	case 'newUploadPrivilege':
+		$_GET['args'] = array((int)$_GET['privilegeType'], (int)$_GET['nBytes'], $_GET['description']) ;
+		$_GET['function'] = 'add_new_privilege';
+		$_GET['locationAfter'] = 'index.php?thisF=privilegeAdmin&uT=y';
+		require('../lib/execute.inc.php');
+		exit();
+
+
+	case 'newCqpBinaryPrivilege':
+		$_GET['args'] = array((int)$_GET['privilegeType'], NULL, $_GET['description']) ;
+		$_GET['function'] = 'add_new_privilege';
+		$_GET['locationAfter'] = 'index.php?thisF=privilegeAdmin&uT=y';
+		require('../lib/execute.inc.php');
+		exit();
+
+
+	case 'updatePrivilegeDesc':
+		if (empty($_GET['privilege']))
+			break;
+		$_GET['privilege'] = (int)$_GET['privilege'];
+		$_GET['args'] = array($_GET['privilege'], $_GET['description']);
+		$_GET['function'] = 'update_privilege_description';
+		$_GET['locationAfter'] = 'index.php?thisF=privilegeAdmin&uT=y';
+		require('../lib/execute.inc.php');
+		exit();
+
+
+	case 'updatePrivilegeIntMax':
+		$_GET['args'] = array($_GET['privilege'], preg_replace('/\D/', '', $_GET['newMax']));
+		$_GET['function'] = 'update_privilege_integer_max';
+		$_GET['locationAfter'] = 'index.php?thisF=privilegeAdmin&uT=y';
+		require('../lib/execute.inc.php');
+		exit();
 		
-	
+		
+	case 'editPrivAddCorpus':
+		$_GET['args'] = array($_GET['privilege'], $_GET['corpus']);
+		$_GET['function'] = 'add_corpus_to_privilege_scope';
+		$_GET['locationAfter'] = 'index.php?thisF=privilegeAdmin&uT=y';
+		require('../lib/execute.inc.php');
+		exit();
+		
+		
+	case 'editPrivRemoveCorpus':
+		$_GET['args'] = array($_GET['privilege'], $_GET['corpus']);
+		$_GET['function'] = 'remove_corpus_from_privilege_scope';
+		$_GET['locationAfter'] = 'index.php?thisF=privilegeAdmin&uT=y';
+		require('../lib/execute.inc.php');
+		exit();
+
+
 	case 'deletePrivilege':
 		$_GET['function'] = 'delete_privilege';
-		$_GET['args'] = (string)(int)$_GET['privilege'];
-		$_GET['locationAfter'] = 'index.php?thisF=privilegeAdmin&uT=y'; 
+		$_GET['args'] = (int)$_GET['privilege'];
+		$_GET['locationAfter'] = 'index.php?thisF=privilegeAdmin&uT=y';
 		require('../lib/execute.inc.php');
 		exit();
 
@@ -310,7 +387,7 @@ switch($_GET['admFunction'])
 	case 'variableMetadata':
 		$_GET['function'] = 'add_variable_corpus_metadata';
 		$_GET['args'] = $_GET['corpus'] . '#' . $_GET['variableMetadataAttribute'] . '#' . $_GET['variableMetadataValue'];
-		$_GET['locationAfter'] = '../'. $_GET['corpus'] .'/index.php?thisQ=manageMetadata&uT=y';
+		$_GET['locationAfter'] = '../'. $_GET['corpus'] .'/index.php?thisQ=corpusSettings&uT=y';
 		require('../lib/execute.inc.php');
 		exit();
 
@@ -499,6 +576,54 @@ switch($_GET['admFunction'])
 		exit();
 	
 	
+	case 'deleteDbLeak':
+		$_GET['function'] = 'delete_stray_db_table'; 
+		$_GET['args'] = array();
+		/* fill array from form entries */
+		foreach($_GET as $k => $v)
+		{
+			if ('1' === $v && 'del_' === substr($k, 0, 4))
+			{
+				$_GET['args'][] = substr($k, 4);
+				unset($_GET[$k]);
+			}
+		}
+		$_GET['locationAfter'] = 'index.php?thisF=dbCacheControl&uT=y';
+		require('../lib/execute.inc.php');
+		exit();
+	
+	
+	case 'deleteDbLeakDbEntries':
+		$_GET['function'] = 'delete_stray_db_entry';
+		$_GET['args'] = array();
+		/* fill array from form entries */
+		foreach($_GET as $k => $v)
+		{
+			if ('1' === $v && 'dl_' === substr($k, 0, 3))
+			{
+				$_GET['args'][] = substr($k, 3);
+				unset($_GET[$k]);
+			}
+		}
+		$_GET['locationAfter'] = 'index.php?thisF=dbCacheControl&uT=y';
+		require('../lib/execute.inc.php');
+		exit();
+	
+	
+	case'clearQueryHistory':
+		if ( ! (isset($_GET['sureyouwantto']) && $_GET['sureyouwantto'] == 'yes') )
+		{
+			/* default back to non-function-execute-mode */
+			$_GET = array();
+			break;
+		}
+		$_GET['function'] = 'history_total_clear';
+		$_GET['args'] = array();
+		$_GET['locationAfter'] = 'index.php';
+		require('../lib/execute.inc.php');
+		exit();
+	
+		
 	default:
 		/* break and fall through to the rest of adminhome.inc.php */
 		break;
@@ -506,4 +631,6 @@ switch($_GET['admFunction'])
 
 /* end of big main switch, and thus end of admin-execute */
 
+/* if we have broken the switch rather than exiting from a case, we fall-through to adminhome.inc.php,
+ * which includes() this script.  */
 

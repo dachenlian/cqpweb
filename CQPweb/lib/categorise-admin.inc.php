@@ -28,11 +28,10 @@
  * 
  */
 
-/* ------------ *
- * BEGIN SCRIPT *
- * ------------ */
+/* Allow for usr/xxxx/corpus: if we are 3 levels down instead of 2, move up two levels in the directory tree */
+if (! is_dir('../lib'))
+	chdir('../../../exe');
 
-/* initialise variables from settings files  */
 require('../lib/environment.inc.php');
 
 
@@ -41,11 +40,10 @@ require('../lib/library.inc.php');
 require('../lib/html-lib.inc.php');
 require('../lib/exiterror.inc.php');
 require('../lib/subcorpus.inc.php');
+require('../lib/xml.inc.php');
 require('../lib/cache.inc.php');
 require('../lib/db.inc.php');
 require('../lib/user-lib.inc.php');
-
-require("../lib/cwb.inc.php");
 require("../lib/cqp.inc.php");
 
 cqpweb_startup_environment();
@@ -306,7 +304,8 @@ function categorise_separate()
 	$newqname_root = $qname . '_';
 	$newsavename_root = $query_record->save_name . '_';
 
-	$outfile_path = "{$Config->dir->cache}/temp_cat_$newqname_root.tbl";
+	/* has to be "realpath" because it's going to be used as an outfile! */
+	$outfile_path = realpath($Config->dir->cache) . "/temp_cat_$newqname_root.tbl";
 	if (is_file($outfile_path))
 		unlink($outfile_path);
 
@@ -560,7 +559,7 @@ function categorise_enter_categories($error = NULL)
 			
 			if ($error !== NULL && isset($_GET["cat_$i"]))
 				$val = 'value="' . substr(preg_replace('/\W/', '', $_GET["cat_$i"]), 0, 99) . '"';
-			if ($error !== NULL && $_GET["defaultCat"] == $i)
+			if ($error !== NULL && (isset($_GET["defaultCat"]) && $_GET["defaultCat"] == $i) )
 				$selected = 'checked="checked"';
 				
 			echo "
