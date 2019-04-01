@@ -5,25 +5,19 @@ Starts and builds the container (if necessary)
 docker-compose up -d --build cwb
 ```
 
-Enter the docker machine with an interactive bash session
+Enter the docker container with an interactive bash session
 ```
 docker exec -it cqpweb_cwb_1 bash
 ```
 
 This will setup the database and user
 ```
-cat /tmp/cwb/mysql_setup | mysql
+cat /tmp/src/mysql_setup | mysql
 ```
 
 This will reset the databse (This removes all data!)
 ```
-cat /tmp/cwb/mysql_clear | mysql
-```
-
-Create a directory for uploaded files
-```
-mkdir /cqp/upload
-mkdir /corpora/data/
+cat /tmp/src/mysql_clear | mysql
 ```
 
 This will setup the database
