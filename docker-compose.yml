@@ -7,8 +7,9 @@ services:
     ports:
       - 80:80
     command: ./run-cqp.sh
+    stdin_open: true
+    tty: true
     volumes:
-      - ./CQPweb:/var/www
       - ./corpora:/corpora
-      - ./registry:/usr/local/share/cwb/registry
+      - ./registry:/usr/local/cwb-3.4.15/share/cwb/registry/
       - ./cqp:/cqp

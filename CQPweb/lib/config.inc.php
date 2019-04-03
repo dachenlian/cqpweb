@@ -26,3 +26,14 @@ $cqpweb_tempdir   = '/tmp/cqp';
 $cqpweb_uploaddir = '/cqp/upload';
 $cwb_datadir      = '/corpora/data';
 $cwb_registry     = '/usr/local/share/cwb/registry/';
+
+
+/* --------------- *
+ * optional config *
+ * --------------- */
+
+$path_to_cwb = '/usr/local/cwb-3.4.15/bin';
+$path_to_perl = '/usr/bin/perl';
+$path_to_r = '/usr/bin/R';
+
+$cwb_max_ram_usage = 1000;

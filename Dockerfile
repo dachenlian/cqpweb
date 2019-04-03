@@ -39,7 +39,7 @@ COPY ./CQPweb /CQPweb
 
 WORKDIR /tmp/src
 
-VOLUME /var/lib/mysql /corpora /usr/local/share/cwb/registry /cqp
+VOLUME /var/lib/mysql /corpora /usr/local/cwb-3.4.15/share/cwb/registry /cqp
 
 RUN cp /tmp/src/php.ini /etc/php/7.3/apache2/php.ini && \
     cp /tmp/src/servername.conf /etc/apache2/conf-available/servername.conf && \
