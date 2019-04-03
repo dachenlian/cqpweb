@@ -22,7 +22,7 @@ cat /tmp/src/mysql_clear | mysql
 
 This will setup the database
 ```
-cd /var/www/CQPweb/bin
+cd /CQPweb/bin
 php autosetup.php
 ```
 
